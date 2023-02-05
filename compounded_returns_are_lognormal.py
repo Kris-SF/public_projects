@@ -14,9 +14,9 @@ import pandas as pd
 """"
 Choose Parameters
 """
-mean_return = .07
-vol = .20
-num_of_years = 40
+mean_return = .12
+vol = .198
+num_of_years = 97
 initial_bankroll = 100
 num_of_sims = 10000
 
