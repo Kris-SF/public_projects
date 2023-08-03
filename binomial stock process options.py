@@ -66,12 +66,13 @@ def randomize_stock_price_change(share_price, up_probability, up_return, down_re
 
 
 #Inputs
-num_of_simulations = 100
+num_of_simulations = 10
 
-# Initialize simulation_table before the for loop
+# Initialize tables before the loop
 simulation_table = pd.DataFrame(columns = ['option_position', 'strike', 'terminal_price', 'delta_hedged_P/L'])
+path_table = pd.DataFrame(columns = ['trial', 'current_step', 'strike', 'option_position', 'callput', 'share_price', 'cumulative_portfolio_P/L'])
 
-for i in range(num_of_simulations+1):
+for i in range(num_of_simulations):
     
     stock_price = 100
     up_probability = .5
@@ -104,7 +105,19 @@ for i in range(num_of_simulations+1):
         'share_price': stock_price,
      }
     
+    path = {
+        'trial': 1,
+        'current_step': current_step,
+        'strike': strike,
+        'option_position': option_position,
+        'callput': callput,
+        'share_price': stock_price,
+        'cumulative_portfolio_P/L': 0
+    }
+    
     portfolio = pd.DataFrame(position_data,index=[0])
+    
+    
     
     
     
@@ -114,6 +127,8 @@ for i in range(num_of_simulations+1):
     #Increment time and position data
     
     while current_step<total_steps_til_expiry:
+        
+        path_table = path_table.append(path, ignore_index=True)
     
         stock_price = randomize_stock_price_change(stock_price, up_probability, up_return, down_return)
         current_step = current_step + 1
@@ -148,7 +163,21 @@ for i in range(num_of_simulations+1):
         portfolio['cumulative_share_P/L'] = portfolio['share_P/L'].cumsum()
         portfolio['cumulative_option_P/L'] = portfolio['option_P/L'].cumsum()
         portfolio['cumulative_portfolio_P/L'] = portfolio['cumulative_share_P/L'] + portfolio['cumulative_option_P/L']
+        cumulative_portfolio_profit = portfolio['cumulative_portfolio_P/L'].iloc[current_step-1]
         delta_hedged_profit = portfolio['cumulative_portfolio_P/L'].iloc[-1]
+        
+        #record trial path
+        path = {
+            'trial': i+1,
+            'current_step': current_step,
+            'strike': strike,
+            'option_position': option_position,
+            'callput': callput,
+            'share_price': stock_price,
+            'cumulative_portfolio_P/L': cumulative_portfolio_profit
+        }
+        
+        
         
         #Simulation Data Table
         
@@ -159,7 +188,10 @@ for i in range(num_of_simulations+1):
         'delta_hedged_P/L': delta_hedged_profit,
     }
     
+    
+    
     simulation_table = simulation_table.append(simulation, ignore_index=True)
+   
         
              
     
