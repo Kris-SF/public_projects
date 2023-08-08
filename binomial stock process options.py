@@ -118,7 +118,10 @@ for i in range(num_of_simulations):
     }
     
     portfolio = pd.DataFrame(position_data,index=[0])
-    path_table = path_table.append(path, ignore_index=True)
+    
+    df_path = pd.DataFrame([path])
+    path_table = pd.concat([path_table, df_path], ignore_index=True)
+   
         
     while remaining_steps_til_expiry> 0:
     
@@ -147,8 +150,10 @@ for i in range(num_of_simulations):
             'share_price': stock_price,
          }
         
-        portfolio = portfolio.append(position_data, ignore_index=True)
+        df_position = pd.DataFrame([position_data])
+        portfolio = pd.concat([portfolio, df_position], ignore_index=True)
         
+                
         # Compute the change in share price from one step to the next
         portfolio['share_price_change'] = portfolio['share_price'].diff()
         portfolio['option_price_change'] = portfolio['option_price'].diff()
@@ -176,7 +181,9 @@ for i in range(num_of_simulations):
                 'cumulative_portfolio_P/L': cumulative_portfolio_profit
             }
         
-        path_table = path_table.append(path, ignore_index=True)
+        df_path = pd.DataFrame([path])
+        path_table = pd.concat([path_table, df_path], ignore_index=True)
+        
         
         #Simulation Data Table
         
@@ -188,7 +195,9 @@ for i in range(num_of_simulations):
     }
     
     
-    
+    df_simulation = pd.DataFrame([simulation])
+    simulation_table = pd.concat([simulation_table, df_simulation], ignore_index=True)
+
     simulation_table = simulation_table.append(simulation, ignore_index=True)
    
         
