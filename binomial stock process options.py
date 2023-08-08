@@ -198,7 +198,7 @@ for i in range(num_of_simulations):
     df_simulation = pd.DataFrame([simulation])
     simulation_table = pd.concat([simulation_table, df_simulation], ignore_index=True)
 
-    simulation_table = simulation_table.append(simulation, ignore_index=True)
+   
    
         
              
