@@ -31,9 +31,9 @@ def option_value(tree, strike,callput):
     in_the_money =[]
     for i in range(len(tree)):
         if callput == "c" and tree[i][0]>strike:
-	         in_the_money.append(tree[i][1]*(tree[i][0]-strike))
+             in_the_money.append(tree[i][1]*(tree[i][0]-strike))
         elif callput == "p" and tree[i][0]<strike: 
-          in_the_money.append(tree[i][1]*(strike - tree[i][0]))
+            in_the_money.append(tree[i][1]*(strike - tree[i][0]))
     return round(sum(in_the_money),3)
 
 def option_delta(current_spot_price, up_probability, up_return, down_probability, down_return, steps_til_expiry, strike, callput, current_option_value):
@@ -66,7 +66,7 @@ def randomize_stock_price_change(share_price, up_probability, up_return, down_re
 
 
 #Inputs
-num_of_simulations = 10
+num_of_simulations = 2
 
 # Initialize tables before the loop
 simulation_table = pd.DataFrame(columns = ['option_position', 'strike', 'terminal_price', 'delta_hedged_P/L'])
@@ -81,10 +81,10 @@ for i in range(num_of_simulations):
     down_return = .1
     
     current_step = 0
-    total_steps_til_expiry = 50
+    total_steps_til_expiry = 3
     remaining_steps_til_expiry = total_steps_til_expiry - current_step
     
-    strike = 130
+    strike = 110
     callput = "c"
     option_position = 1
     tree = create_tree(stock_price, remaining_steps_til_expiry, up_probability, up_return, down_probability, down_return)
@@ -93,6 +93,8 @@ for i in range(num_of_simulations):
     
     #Initialize portfolio
     
+
+   
     position_data = {
         'current_step': current_step,
         'remaining steps_to_expiry': remaining_steps_til_expiry,
@@ -106,7 +108,7 @@ for i in range(num_of_simulations):
      }
     
     path = {
-        'trial': 1,
+        'trial': 1+i,
         'current_step': current_step,
         'strike': strike,
         'option_position': option_position,
@@ -116,22 +118,18 @@ for i in range(num_of_simulations):
     }
     
     portfolio = pd.DataFrame(position_data,index=[0])
-    
-    
-    
-    
-    
-    '''---------Simulation----------'''
-    
-    
-    #Increment time and position data
-    
-    while current_step<total_steps_til_expiry:
+    path_table = path_table.append(path, ignore_index=True)
         
-        path_table = path_table.append(path, ignore_index=True)
+    while remaining_steps_til_expiry> 0:
+    
+        '''---------Simulation----------'''
+            
+        #Increment time and position data
+      
+        
     
         stock_price = randomize_stock_price_change(stock_price, up_probability, up_return, down_return)
-        current_step = current_step + 1
+        current_step = current_step + 1        
         remaining_steps_til_expiry = remaining_steps_til_expiry - 1
         tree = create_tree(stock_price, remaining_steps_til_expiry, up_probability, up_return, down_probability, down_return)
         option_price = option_value(tree, strike, callput)
@@ -167,17 +165,18 @@ for i in range(num_of_simulations):
         delta_hedged_profit = portfolio['cumulative_portfolio_P/L'].iloc[-1]
         
         #record trial path
-        path = {
-            'trial': i+1,
-            'current_step': current_step,
-            'strike': strike,
-            'option_position': option_position,
-            'callput': callput,
-            'share_price': stock_price,
-            'cumulative_portfolio_P/L': cumulative_portfolio_profit
-        }
+        if current_step <= total_steps_til_expiry:
+            path = {
+                'trial': i+1,
+                'current_step': current_step,
+                'strike': strike,
+                'option_position': option_position,
+                'callput': callput,
+                'share_price': stock_price,
+                'cumulative_portfolio_P/L': cumulative_portfolio_profit
+            }
         
-        
+        path_table = path_table.append(path, ignore_index=True)
         
         #Simulation Data Table
         
