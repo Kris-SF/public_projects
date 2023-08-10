@@ -68,12 +68,12 @@ def randomize_stock_price_change(share_price, up_probability, up_return, down_re
 
 
 #Inputs
-num_of_simulations = 10
+num_of_simulations = 100
 sets_of_sims = 20
 
 # Initialize tables before the loop
 simulation_table = pd.DataFrame(columns = ['option_position', 'strike', 'terminal_price', 'delta_hedged_P/L'])
-path_table = pd.DataFrame(columns = ['trial', 'current_step', 'strike', 'option_position', 'callput', 'share_price', 'cumulative_portfolio_P/L'])
+path_table = pd.DataFrame(columns = ['sim_number', 'trial', 'current_step', 'strike', 'option_position', 'callput', 'share_price', 'cumulative_portfolio_P/L'])
 sets_of_sims_table = pd.DataFrame(columns= ['sim', 'mean_P/L'])
 
 for j in range(sets_of_sims):
@@ -87,7 +87,7 @@ for j in range(sets_of_sims):
         down_return = .1
         
         current_step = 0
-        total_steps_til_expiry = 3
+        total_steps_til_expiry = 50
         remaining_steps_til_expiry = total_steps_til_expiry - current_step
         
         strike = 110
@@ -114,6 +114,7 @@ for j in range(sets_of_sims):
          }
         
         path = {
+            'sim_number': j+1,
             'trial': 1+i,
             'current_step': current_step,
             'strike': strike,
@@ -178,6 +179,7 @@ for j in range(sets_of_sims):
             #record trial path
             if current_step <= total_steps_til_expiry:
                 path = {
+                    'sim_number':j+1,
                     'trial': i+1,
                     'current_step': current_step,
                     'strike': strike,
@@ -255,6 +257,25 @@ for j in range(sets_of_sims):
 
 
 
+# Create a new figure and axis
+fig, ax = plt.subplots(figsize=(10, 7))
+
+# Group by sim_number and trial
+grouped = path_table.groupby(['sim_number', 'trial'])
+
+# Plot each share price path
+for (sim, trial), group in grouped:
+    ax.plot(group['current_step'], group['share_price'], label=f"Sim {sim} Trial {trial}")
+
+# Customize the chart
+ax.set_title('Share Price Path for Each Simulation and Trial')
+ax.set_xlabel('Step')
+ax.set_ylabel('Share Price')
+
+
+# Display the chart
+plt.tight_layout()
+plt.show()
 
 
 
