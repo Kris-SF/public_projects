@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Aug  2 18:11:03 2023
-
-@author: kpa32
-"""
-
 import math
 import random
 import matplotlib.pyplot as plt
@@ -68,13 +61,13 @@ def randomize_stock_price_change(share_price, up_probability, up_return, down_re
 
 
 #Inputs
-num_of_simulations = 100
-sets_of_sims = 20
+num_of_simulations = 2000
+sets_of_sims = 1
 
 # Initialize tables before the loop
 simulation_table = pd.DataFrame(columns = ['option_position', 'strike', 'terminal_price', 'delta_hedged_P/L'])
 path_table = pd.DataFrame(columns = ['sim_number', 'trial', 'current_step', 'strike', 'option_position', 'callput', 'share_price', 'cumulative_portfolio_P/L'])
-sets_of_sims_table = pd.DataFrame(columns= ['sim', 'mean_P/L'])
+sets_of_sims_table = pd.DataFrame(columns= ['sim_number', 'mean_P/L'])
 
 for j in range(sets_of_sims):
 
@@ -87,7 +80,7 @@ for j in range(sets_of_sims):
         down_return = .1
         
         current_step = 0
-        total_steps_til_expiry = 50
+        total_steps_til_expiry = 3
         remaining_steps_til_expiry = total_steps_til_expiry - current_step
         
         strike = 110
@@ -186,7 +179,7 @@ for j in range(sets_of_sims):
                     'option_position': option_position,
                     'callput': callput,
                     'share_price': stock_price,
-                    'cumulative_portfolio_P/L': cumulative_portfolio_profit
+                    'cumulative_portfolio_P/L': round(cumulative_portfolio_profit,0)
                 }
             
             df_path = pd.DataFrame([path])
@@ -199,7 +192,7 @@ for j in range(sets_of_sims):
             'option_position': option_position,
             'strike': strike,
             'terminal_price': stock_price,
-            'delta_hedged_P/L': delta_hedged_profit,
+            'delta_hedged_P/L': round(delta_hedged_profit,0),
         }
         
         
@@ -235,9 +228,12 @@ for j in range(sets_of_sims):
     
     
     """Compute average_profit_for_all_simulations"""
-    average_profit_for_all_simulations = sum(value * frequency[value] for value in frequency.index)
+    average_profit_for_all_simulations = round(sum(value * frequency[value] for value in frequency.index),0)
+    st_dev_profit_for_all_simulations = simulation_table['delta_hedged_P/L'].std()
     
     print("Mean_profit_for_all_simulations:", average_profit_for_all_simulations)
+    print("St_Dev_of_profit_for_all_simulations:",st_dev_profit_for_all_simulations)
+
     
     
      
@@ -248,7 +244,7 @@ for j in range(sets_of_sims):
     statistics = grouped.agg(['mean', 'count']).reset_index()
     
     log_entry = {
-        'sim': j + 1,  # trial number
+        'sim_number': j + 1,  # trial number
         'mean_P/L': average_profit_for_all_simulations,
     }
     df_log_entry = pd.DataFrame([log_entry])
@@ -278,5 +274,7 @@ plt.tight_layout()
 plt.show()
 
 
-
-
+print("Mean profit across all sets of sims:", sets_of_sims_table['mean_P/L'].mean())
+print("Standard Dev of profit across all sets of sims:", sets_of_sims_table['mean_P/L'].std())
+print("Sims per set:", num_of_simulations)
+print("Total sets:", sets_of_sims)
