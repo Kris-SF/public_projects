@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Aug  2 18:11:03 2023
+
+@author: kpa32
+"""
+
 import math
 import random
 import matplotlib.pyplot as plt
@@ -61,7 +68,7 @@ def randomize_stock_price_change(share_price, up_probability, up_return, down_re
 
 
 #Inputs
-num_of_simulations = 2000
+num_of_simulations = 100
 sets_of_sims = 1
 
 # Initialize tables before the loop
@@ -80,7 +87,7 @@ for j in range(sets_of_sims):
         down_return = .1
         
         current_step = 0
-        total_steps_til_expiry = 3
+        total_steps_til_expiry = 500
         remaining_steps_til_expiry = total_steps_til_expiry - current_step
         
         strike = 110
@@ -191,7 +198,7 @@ for j in range(sets_of_sims):
         simulation = {
             'option_position': option_position,
             'strike': strike,
-            'terminal_price': stock_price,
+            'terminal_price': round(stock_price,1),
             'delta_hedged_P/L': round(delta_hedged_profit,0),
         }
         
@@ -204,7 +211,7 @@ for j in range(sets_of_sims):
     
     
     
-    """fig, ax = plt.subplots(2, 1, figsize=(10, 15))
+    fig, ax = plt.subplots(2, 1, figsize=(10, 15))
     
     # Plot 1: Histogram of Terminal Prices
     sns.histplot(simulation_table['terminal_price'], kde=True, ax=ax[0])
@@ -212,15 +219,23 @@ for j in range(sets_of_sims):
     ax[0].set_xlabel('Terminal Price')
     ax[0].set_ylabel('Frequency')
     
+    # # Plot 1: Histogram of Terminal Prices
+    # sns.histplot(simulation_table['delta_hedged_P/L'], kde=True, ax=ax[0])
+    # ax[0].set_title('Distribution of Delta-Hedged P/Ls')
+    # ax[0].set_xlabel('Terminal Price')
+    # ax[0].set_ylabel('Frequency')
+    
+       
     
     # Plot 2: Scatter plot between Terminal Prices and Delta Hedged P/L
-    sns.scatterplot(x='terminal_price', y='delta_hedged_P/L', data=simulation_table, ax=ax[1])
+    sns.barplot(x='terminal_price', y='delta_hedged_P/L', data=simulation_table, ax=ax[1])
     ax[1].set_title('Scatter plot between Terminal Prices and Delta Hedged P/L')
     ax[1].set_xlabel('Terminal Price')
     ax[1].set_ylabel('Delta Hedged P/L')
     
     
-    #plt.show()"""
+    plt.show()
+    
     
         
     # Compute the frequency of each unique delta_hedged_P/L value
