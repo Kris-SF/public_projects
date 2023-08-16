@@ -73,8 +73,8 @@ def randomize_stock_price_change(share_price, up_probability, up_return, down_re
 
 
 #Inputs
-num_of_simulations = 100
-sets_of_sims = 12
+num_of_simulations = 1500
+sets_of_sims = 3
 
 # Initialize tables before the loop
 simulation_table = pd.DataFrame(columns = ['sim_number', 'trial', 'option_position', 'strike', 'terminal_price', 'delta_hedged_P/L'])
@@ -92,10 +92,10 @@ for j in range(sets_of_sims):
         down_return = .1
         
         current_step = 0
-        total_steps_til_expiry = 3
+        total_steps_til_expiry = 10
         remaining_steps_til_expiry = total_steps_til_expiry - current_step
         
-        strike = 90
+        strike = 100
         callput = "c"
         option_position = 1
         tree = create_tree(stock_price, remaining_steps_til_expiry, up_probability, up_return, down_probability, down_return)
@@ -227,7 +227,7 @@ for j in range(sets_of_sims):
     ax[0].set_ylabel('Percentage')
     
     # Add percentage sign to y-axis labels
-    # ax[0].yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _: '{:.0f}%'.format(y)))
+    ax[0].yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _: '{:.0f}%'.format(y)))
     
     # # Plot 1: Histogram of Terminal Prices
     # sns.histplot(simulation_table['delta_hedged_P/L'], kde=True, ax=ax[0])
