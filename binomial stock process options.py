@@ -14,6 +14,7 @@ import random
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
+import matplotlib.ticker as mticker
 
 def binomial_return(qty_ups, up_return, up_probability, start_price, steps):
 	qty_downs = steps - qty_ups
@@ -72,13 +73,13 @@ def randomize_stock_price_change(share_price, up_probability, up_return, down_re
 
 
 #Inputs
-num_of_simulations = 200
-sets_of_sims = 5
+num_of_simulations = 100
+sets_of_sims = 12
 
 # Initialize tables before the loop
 simulation_table = pd.DataFrame(columns = ['sim_number', 'trial', 'option_position', 'strike', 'terminal_price', 'delta_hedged_P/L'])
 path_table = pd.DataFrame(columns = ['sim_number', 'trial', 'current_step', 'strike', 'option_position', 'callput', 'share_price', 'cumulative_portfolio_P/L'])
-sets_of_sims_table = pd.DataFrame(columns= ['sim_number', 'mean_P/L'])
+sets_of_sims_table = pd.DataFrame(columns= ['sim_number', 'mean_P/L', 'std_dev'])
 
 for j in range(sets_of_sims):
 
@@ -220,10 +221,13 @@ for j in range(sets_of_sims):
     fig, ax = plt.subplots(2, 1, figsize=(10, 15))
     
     # Plot 1: Histogram of Terminal Prices
-    sns.histplot(simulation_table['terminal_price'], kde=True, ax=ax[0])
+    sns.histplot(simulation_table['terminal_price'], kde=True, ax=ax[0], stat="percent")
     ax[0].set_title('Distribution of Terminal Prices')
     ax[0].set_xlabel('Terminal Price')
-    ax[0].set_ylabel('Frequency')
+    ax[0].set_ylabel('Percentage')
+    
+    # Add percentage sign to y-axis labels
+    # ax[0].yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _: '{:.0f}%'.format(y)))
     
     # # Plot 1: Histogram of Terminal Prices
     # sns.histplot(simulation_table['delta_hedged_P/L'], kde=True, ax=ax[0])
@@ -244,18 +248,9 @@ for j in range(sets_of_sims):
     
     
         
-    # Compute the frequency of each unique delta_hedged_P/L value
-    frequency = simulation_table['delta_hedged_P/L'].value_counts(normalize=True)
+   
     
-    
-    """Compute average_profit_for_all_simulations"""
-    average_profit_for_all_simulations = round(sum(value * frequency[value] for value in frequency.index),0)
-    st_dev_profit_for_all_simulations = simulation_table['delta_hedged_P/L'].std()
-    
-    print("Mean_profit_for_all_simulations:", average_profit_for_all_simulations)
-    print("St_Dev_of_profit_for_all_simulations:",st_dev_profit_for_all_simulations)
-
-    
+       
     
      
     """there are only steps+1 possible terminal prices, i want to see the p/l distribution for each of them"""
@@ -264,12 +259,20 @@ for j in range(sets_of_sims):
     # Calculate mean and standard deviation for each group
     sim_summary = path_table[(path_table["sim_number"] == j+1)& (path_table["current_step"]==total_steps_til_expiry)]
     sim_mean_profit= sim_summary["cumulative_portfolio_P/L"].mean()
+    sim_std_dev = sim_summary["cumulative_portfolio_P/L"].std()
     log_entry = {
         'sim_number': j + 1,  # trial number
         'mean_P/L': sim_mean_profit,
+        'st_dev': sim_std_dev,
     }
     df_log_entry = pd.DataFrame([log_entry])
     sets_of_sims_table = pd.concat([sets_of_sims_table, df_log_entry], ignore_index=True)
+    
+    print("Mean_profit_for_all_simulations:", round(sim_mean_profit,1))
+    print("St_dev_for_all_simulations:", round(sim_std_dev,0))
+    print("")
+
+    
 
 
 
@@ -295,8 +298,12 @@ plt.tight_layout()
 plt.show()
 
 
-print("Mean profit across all sets of sims:", sets_of_sims_table['mean_P/L'].mean())
-print("Standard Dev of profit across all sets of sims:", sets_of_sims_table['mean_P/L'].std())
+
+
+
+print("Mean profit across all sets of sims:", round(sets_of_sims_table['mean_P/L'].mean(),2))
+print("Standard Dev of profit across all sets of sims:", round(sets_of_sims_table['mean_P/L'].std(),1))
+print("")
 print("Sims per set:", num_of_simulations)
 print("Total sets:", sets_of_sims)
 
