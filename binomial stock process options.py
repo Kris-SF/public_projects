@@ -3,7 +3,11 @@
 Created on Wed Aug  2 18:11:03 2023
 
 @author: kpa32
+""
+
+# -*- coding: utf-8 -*-
 """
+
 
 import math
 import random
@@ -68,11 +72,11 @@ def randomize_stock_price_change(share_price, up_probability, up_return, down_re
 
 
 #Inputs
-num_of_simulations = 100
-sets_of_sims = 1
+num_of_simulations = 200
+sets_of_sims = 5
 
 # Initialize tables before the loop
-simulation_table = pd.DataFrame(columns = ['option_position', 'strike', 'terminal_price', 'delta_hedged_P/L'])
+simulation_table = pd.DataFrame(columns = ['sim_number', 'trial', 'option_position', 'strike', 'terminal_price', 'delta_hedged_P/L'])
 path_table = pd.DataFrame(columns = ['sim_number', 'trial', 'current_step', 'strike', 'option_position', 'callput', 'share_price', 'cumulative_portfolio_P/L'])
 sets_of_sims_table = pd.DataFrame(columns= ['sim_number', 'mean_P/L'])
 
@@ -87,10 +91,10 @@ for j in range(sets_of_sims):
         down_return = .1
         
         current_step = 0
-        total_steps_til_expiry = 500
+        total_steps_til_expiry = 3
         remaining_steps_til_expiry = total_steps_til_expiry - current_step
         
-        strike = 110
+        strike = 90
         callput = "c"
         option_position = 1
         tree = create_tree(stock_price, remaining_steps_til_expiry, up_probability, up_return, down_probability, down_return)
@@ -173,7 +177,7 @@ for j in range(sets_of_sims):
             portfolio['cumulative_share_P/L'] = portfolio['share_P/L'].cumsum()
             portfolio['cumulative_option_P/L'] = portfolio['option_P/L'].cumsum()
             portfolio['cumulative_portfolio_P/L'] = portfolio['cumulative_share_P/L'] + portfolio['cumulative_option_P/L']
-            cumulative_portfolio_profit = portfolio['cumulative_portfolio_P/L'].iloc[current_step-1]
+            cumulative_portfolio_profit = portfolio['cumulative_portfolio_P/L'].iloc[-1]
             delta_hedged_profit = portfolio['cumulative_portfolio_P/L'].iloc[-1]
             
             #record trial path
@@ -196,6 +200,8 @@ for j in range(sets_of_sims):
             #Simulation Data Table
             
         simulation = {
+            'sim_number':j+1,
+            'trial': i+1,
             'option_position': option_position,
             'strike': strike,
             'terminal_price': round(stock_price,1),
@@ -256,11 +262,11 @@ for j in range(sets_of_sims):
     grouped = simulation_table.groupby('terminal_price')['delta_hedged_P/L']
     
     # Calculate mean and standard deviation for each group
-    statistics = grouped.agg(['mean', 'count']).reset_index()
-    
+    sim_summary = path_table[(path_table["sim_number"] == j+1)& (path_table["current_step"]==total_steps_til_expiry)]
+    sim_mean_profit= sim_summary["cumulative_portfolio_P/L"].mean()
     log_entry = {
         'sim_number': j + 1,  # trial number
-        'mean_P/L': average_profit_for_all_simulations,
+        'mean_P/L': sim_mean_profit,
     }
     df_log_entry = pd.DataFrame([log_entry])
     sets_of_sims_table = pd.concat([sets_of_sims_table, df_log_entry], ignore_index=True)
@@ -293,3 +299,11 @@ print("Mean profit across all sets of sims:", sets_of_sims_table['mean_P/L'].mea
 print("Standard Dev of profit across all sets of sims:", sets_of_sims_table['mean_P/L'].std())
 print("Sims per set:", num_of_simulations)
 print("Total sets:", sets_of_sims)
+
+
+
+    
+        
+    
+        
+        
