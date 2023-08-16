@@ -73,7 +73,7 @@ def randomize_stock_price_change(share_price, up_probability, up_return, down_re
 
 
 #Inputs
-num_of_simulations = 1500
+num_of_simulations = 10
 sets_of_sims = 3
 
 # Initialize tables before the loop
@@ -92,10 +92,10 @@ for j in range(sets_of_sims):
         down_return = .1
         
         current_step = 0
-        total_steps_til_expiry = 10
+        total_steps_til_expiry = 100
         remaining_steps_til_expiry = total_steps_til_expiry - current_step
         
-        strike = 100
+        strike = 250
         callput = "c"
         option_position = 1
         tree = create_tree(stock_price, remaining_steps_til_expiry, up_probability, up_return, down_probability, down_return)
@@ -270,6 +270,7 @@ for j in range(sets_of_sims):
     
     print("Mean_profit_for_all_simulations:", round(sim_mean_profit,1))
     print("St_dev_for_all_simulations:", round(sim_std_dev,0))
+    print("st_dev_scaled_to_initial_option_premium:", round(.01*round(sim_std_dev,0)/portfolio['option_price'].iloc[0],3))
     print("")
 
     
