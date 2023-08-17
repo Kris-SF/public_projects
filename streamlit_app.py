@@ -257,7 +257,7 @@ for j in range(sets_of_sims):
        
     
      
-    """there are only steps+1 possible terminal prices, i want to see the p/l distribution for each of them"""
+    #"""there are only steps+1 possible terminal prices, i want to see the p/l distribution for each of them"""
     grouped = simulation_table.groupby('terminal_price')['delta_hedged_P/L']
     
     # Calculate mean and standard deviation for each group
