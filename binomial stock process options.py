@@ -73,13 +73,13 @@ def randomize_stock_price_change(share_price, up_probability, up_return, down_re
 
 
 #Inputs
-num_of_simulations = 10
-sets_of_sims = 3
+num_of_simulations = 120
+sets_of_sims = 1
 
 # Initialize tables before the loop
 simulation_table = pd.DataFrame(columns = ['sim_number', 'trial', 'option_position', 'strike', 'terminal_price', 'delta_hedged_P/L'])
 path_table = pd.DataFrame(columns = ['sim_number', 'trial', 'current_step', 'strike', 'option_position', 'callput', 'share_price', 'cumulative_portfolio_P/L'])
-sets_of_sims_table = pd.DataFrame(columns= ['sim_number', 'mean_P/L', 'std_dev'])
+sets_of_sims_table = pd.DataFrame(columns= ['sim_number', 'sim_total_P/L', 'mean_P/L', 'std_dev'])
 
 for j in range(sets_of_sims):
 
@@ -92,10 +92,10 @@ for j in range(sets_of_sims):
         down_return = .1
         
         current_step = 0
-        total_steps_til_expiry = 100
+        total_steps_til_expiry = 3
         remaining_steps_til_expiry = total_steps_til_expiry - current_step
         
-        strike = 250
+        strike = 100
         callput = "c"
         option_position = 1
         tree = create_tree(stock_price, remaining_steps_til_expiry, up_probability, up_return, down_probability, down_return)
@@ -259,16 +259,19 @@ for j in range(sets_of_sims):
     # Calculate mean and standard deviation for each group
     sim_summary = path_table[(path_table["sim_number"] == j+1)& (path_table["current_step"]==total_steps_til_expiry)]
     sim_mean_profit= sim_summary["cumulative_portfolio_P/L"].mean()
+    sim_total_profit = sim_summary["cumulative_portfolio_P/L"].sum()
     sim_std_dev = sim_summary["cumulative_portfolio_P/L"].std()
     log_entry = {
         'sim_number': j + 1,  # trial number
         'mean_P/L': sim_mean_profit,
+        'sim_total_P/L': sim_total_profit,
         'st_dev': sim_std_dev,
     }
     df_log_entry = pd.DataFrame([log_entry])
     sets_of_sims_table = pd.concat([sets_of_sims_table, df_log_entry], ignore_index=True)
     
     print("Mean_profit_for_all_simulations:", round(sim_mean_profit,1))
+    print("Total_profit_for_all_simulations:", round(sim_total_profit,1))
     print("St_dev_for_all_simulations:", round(sim_std_dev,0))
     print("st_dev_scaled_to_initial_option_premium:", round(.01*round(sim_std_dev,0)/portfolio['option_price'].iloc[0],3))
     print("")
@@ -302,8 +305,8 @@ plt.show()
 
 
 
-print("Mean profit across all sets of sims:", round(sets_of_sims_table['mean_P/L'].mean(),2))
-print("Standard Dev of profit across all sets of sims:", round(sets_of_sims_table['mean_P/L'].std(),1))
+print("Mean profit across all sets of sims:", round(sets_of_sims_table['mean_P/L'].mean(),1))
+print("Standard Dev of profit across all sets of sims:", round(sets_of_sims_table['sim_total_P/L'].std(),1))
 print("")
 print("Sims per set:", num_of_simulations)
 print("Total sets:", sets_of_sims)
