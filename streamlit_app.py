@@ -15,6 +15,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import matplotlib.ticker as mticker
+import streamlit as st
+
+st.write('hello world')
 
 def binomial_return(qty_ups, up_return, up_probability, start_price, steps):
 	qty_downs = steps - qty_ups
@@ -25,8 +28,6 @@ def binomial_return(qty_ups, up_return, up_probability, start_price, steps):
 	price = start_price * ((1+up_return)**qty_ups) * ((1-down_return)**qty_downs)
 	
 	return price, probability
-
-
 
 def create_tree(start_price, steps, up_probability, up_return, down_probability, down_return):
 	tree = {}
@@ -73,6 +74,8 @@ def randomize_stock_price_change(share_price, up_probability, up_return, down_re
 
 
 #Inputs
+
+# replace manual parameters with streamlit widgets
 num_of_simulations = 120
 sets_of_sims = 1
 
@@ -80,6 +83,7 @@ sets_of_sims = 1
 simulation_table = pd.DataFrame(columns = ['sim_number', 'trial', 'option_position', 'strike', 'terminal_price', 'delta_hedged_P/L'])
 path_table = pd.DataFrame(columns = ['sim_number', 'trial', 'current_step', 'strike', 'option_position', 'callput', 'share_price', 'cumulative_portfolio_P/L'])
 sets_of_sims_table = pd.DataFrame(columns= ['sim_number', 'sim_total_P/L', 'mean_P/L', 'std_dev'])
+
 
 for j in range(sets_of_sims):
 
