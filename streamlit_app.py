@@ -310,6 +310,7 @@ plt.show()
 
 
 print("Mean profit across all sets of sims:", round(sets_of_sims_table['mean_P/L'].mean(),1))
+st.write(f"mean profit across all sets of sims: {round(sets_of_sims_table['mean_P/L'].mean(),1)}")
 print("Standard Dev of profit across all sets of sims:", round(sets_of_sims_table['sim_total_P/L'].std(),1))
 print("")
 print("Sims per set:", num_of_simulations)
