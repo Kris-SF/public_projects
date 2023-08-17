@@ -141,7 +141,7 @@ for j in range(sets_of_sims):
             
         while remaining_steps_til_expiry> 0:
         
-            '''---------Simulation----------'''
+            #'''---------Simulation----------'''
                 
             #Increment time and position data
           
