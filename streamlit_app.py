@@ -225,7 +225,7 @@ for j in range(sets_of_sims):
     fig, ax = plt.subplots(2, 1, figsize=(10, 15))
     
     # Plot 1: Histogram of Terminal Prices
-    sns.histplot(simulation_table['terminal_price'], kde=True, ax=ax[0], stat="percent")
+    #sns.histplot(simulation_table['terminal_price'], kde=True, ax=ax[0], stat="percent")
     ax[0].set_title('Distribution of Terminal Prices')
     ax[0].set_xlabel('Terminal Price')
     ax[0].set_ylabel('Percentage')
@@ -242,7 +242,7 @@ for j in range(sets_of_sims):
        
     
     # Plot 2: Scatter plot between Terminal Prices and Delta Hedged P/L
-    sns.barplot(x='terminal_price', y='delta_hedged_P/L', data=simulation_table, ax=ax[1])
+    #sns.barplot(x='terminal_price', y='delta_hedged_P/L', data=simulation_table, ax=ax[1])
     ax[1].set_title('Scatter plot between Terminal Prices and Delta Hedged P/L')
     ax[1].set_xlabel('Terminal Price')
     ax[1].set_ylabel('Delta Hedged P/L')
