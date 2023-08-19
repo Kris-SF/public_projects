@@ -92,7 +92,7 @@ for j in range(sets_of_sims):
     for i in range(num_of_simulations):
         
         stock_price = 100
-	strike = 100
+        strike = 100
         current_step = 0
         total_steps_til_expiry = 3
         remaining_steps_til_expiry = total_steps_til_expiry - current_step
@@ -310,6 +310,13 @@ print("")
 print("Sims per set:", num_of_simulations)
 print("Total sets:", sets_of_sims)
 
+
+
+    
+        
+    
+        
+        
 
 
     
