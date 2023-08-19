@@ -75,6 +75,12 @@ def randomize_stock_price_change(share_price, up_probability, up_return, down_re
 #Inputs
 num_of_simulations = 120
 sets_of_sims = 1
+up_probability = .5
+down_probability = .5
+up_return = .1
+down_return = .1
+callput = "c"
+option_position = 1
 
 # Initialize tables before the loop
 simulation_table = pd.DataFrame(columns = ['sim_number', 'trial', 'option_position', 'strike', 'terminal_price', 'delta_hedged_P/L'])
@@ -86,18 +92,11 @@ for j in range(sets_of_sims):
     for i in range(num_of_simulations):
         
         stock_price = 100
-        up_probability = .5
-        down_probability = .5
-        up_return = .1
-        down_return = .1
-        
+	strike = 100
         current_step = 0
         total_steps_til_expiry = 3
         remaining_steps_til_expiry = total_steps_til_expiry - current_step
-        
-        strike = 100
-        callput = "c"
-        option_position = 1
+
         tree = create_tree(stock_price, remaining_steps_til_expiry, up_probability, up_return, down_probability, down_return)
         option_price = option_value(tree, strike, callput)
         position_option_delta = option_delta(stock_price, up_probability, up_return, down_probability, down_return, remaining_steps_til_expiry, strike, callput, option_price)
