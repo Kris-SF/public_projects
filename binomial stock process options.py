@@ -77,7 +77,7 @@ def randomize_stock_price_change(share_price, up_probability, up_return, down_re
 
 #Inputs
 num_of_simulations = 1000
-sets_of_sims = 2
+sets_of_sims = 1
 up_probability = .5
 down_probability = .5
 up_return = .1
@@ -97,7 +97,7 @@ for j in range(sets_of_sims):
         stock_price = 100
         strike = 100
         current_step = 0
-        total_steps_til_expiry = 14
+        total_steps_til_expiry = 10
         remaining_steps_til_expiry = total_steps_til_expiry - current_step
 
         tree = create_tree(stock_price, remaining_steps_til_expiry, up_probability, up_return, down_probability, down_return)
@@ -274,8 +274,9 @@ for j in range(sets_of_sims):
     sets_of_sims_table = pd.concat([sets_of_sims_table, df_log_entry], ignore_index=True)
     
     print('Simulation_number:', j+1)
-    print("Mean_profit_for_all_simulations:", round(sim_mean_profit,1))
+    
     print("Total_profit_for_all_simulations:", round(sim_total_profit,1))
+    print("Mean_profit_for_all_simulations:", round(sim_mean_profit,1))
     print("St_dev_for_all_simulations:", round(sim_std_dev,0))
     print("st_dev_scaled_to_initial_option_premium:", round(.01*round(sim_std_dev,0)/portfolio['option_price'].iloc[0],3))
     print("")
@@ -306,19 +307,17 @@ plt.tight_layout()
 plt.show()
 
 
-
-
-
-print("Mean profit across all sets of sims:", round(sets_of_sims_table['mean_P/L'].mean(),1))
-print("Standard Dev of profit across all sets of sims:", round(sets_of_sims_table['sim_total_P/L'].std(),1))
-print("")
 print("")
 print("Summary of all simulations")
 print("")
 print("Sims per set:", num_of_simulations)
 print("Total sets:", sets_of_sims)
-print("Mean_stock_return", round(simulation_table['stock_return'].mean(),3))
-print("Modal_stock_return", round(simulation_table['stock_return'].mode(),3))
+print("")
+print("Mean profit across all sets of sims:", round(sets_of_sims_table['mean_P/L'].mean(),1))
+print("Standard Dev of profit across all sets of sims:", round(sets_of_sims_table['sim_total_P/L'].std(),1))
+print("")
+print("Mean_stock_return:", round(simulation_table['stock_return'].mean(),3))
+print("Modal_stock_return:", round(simulation_table['stock_return'].mode(),3))
 
 end_time = time.time()
 
