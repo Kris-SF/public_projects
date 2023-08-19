@@ -15,6 +15,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import matplotlib.ticker as mticker
+import time
+
+start_time = time.time()
 
 def binomial_return(qty_ups, up_return, up_probability, start_price, steps):
 	qty_downs = steps - qty_ups
@@ -73,8 +76,8 @@ def randomize_stock_price_change(share_price, up_probability, up_return, down_re
 
 
 #Inputs
-num_of_simulations = 120
-sets_of_sims = 1
+num_of_simulations = 1000
+sets_of_sims = 2
 up_probability = .5
 down_probability = .5
 up_return = .1
@@ -83,7 +86,7 @@ callput = "c"
 option_position = 1
 
 # Initialize tables before the loop
-simulation_table = pd.DataFrame(columns = ['sim_number', 'trial', 'option_position', 'strike', 'terminal_price', 'delta_hedged_P/L'])
+simulation_table = pd.DataFrame(columns = ['sim_number', 'trial', 'option_position', 'strike', 'terminal_price', 'stock_return', 'delta_hedged_P/L'])
 path_table = pd.DataFrame(columns = ['sim_number', 'trial', 'current_step', 'strike', 'option_position', 'callput', 'share_price', 'cumulative_portfolio_P/L'])
 sets_of_sims_table = pd.DataFrame(columns= ['sim_number', 'sim_total_P/L', 'mean_P/L', 'std_dev'])
 
@@ -94,7 +97,7 @@ for j in range(sets_of_sims):
         stock_price = 100
         strike = 100
         current_step = 0
-        total_steps_til_expiry = 3
+        total_steps_til_expiry = 14
         remaining_steps_til_expiry = total_steps_til_expiry - current_step
 
         tree = create_tree(stock_price, remaining_steps_til_expiry, up_probability, up_return, down_probability, down_return)
@@ -205,6 +208,7 @@ for j in range(sets_of_sims):
             'option_position': option_position,
             'strike': strike,
             'terminal_price': round(stock_price,1),
+            'stock_return': round((stock_price/portfolio['share_price'].iloc[0]-1),3),
             'delta_hedged_P/L': round(delta_hedged_profit,0),
         }
         
@@ -269,6 +273,7 @@ for j in range(sets_of_sims):
     df_log_entry = pd.DataFrame([log_entry])
     sets_of_sims_table = pd.concat([sets_of_sims_table, df_log_entry], ignore_index=True)
     
+    print('Simulation_number:', j+1)
     print("Mean_profit_for_all_simulations:", round(sim_mean_profit,1))
     print("Total_profit_for_all_simulations:", round(sim_total_profit,1))
     print("St_dev_for_all_simulations:", round(sim_std_dev,0))
@@ -307,11 +312,18 @@ plt.show()
 print("Mean profit across all sets of sims:", round(sets_of_sims_table['mean_P/L'].mean(),1))
 print("Standard Dev of profit across all sets of sims:", round(sets_of_sims_table['sim_total_P/L'].std(),1))
 print("")
+print("")
+print("Summary of all simulations")
+print("")
 print("Sims per set:", num_of_simulations)
 print("Total sets:", sets_of_sims)
+print("Mean_stock_return", round(simulation_table['stock_return'].mean(),3))
+print("Modal_stock_return", round(simulation_table['stock_return'].mode(),3))
 
+end_time = time.time()
 
-
+elapsed_time = round(end_time - start_time,0)
+print(f"The code took {elapsed_time} seconds to run.")
     
         
     
