@@ -14,6 +14,7 @@ import random
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
+import numpy as np
 import matplotlib.ticker as mticker
 import time
 
@@ -28,6 +29,13 @@ def binomial_return(qty_ups, up_return, up_probability, start_price, steps):
 	price = start_price * ((1+up_return)**qty_ups) * ((1-down_return)**qty_downs)
 	
 	return price, probability
+
+def theo_binomial_distribution(steps, up_return, up_probability, start_price):
+    distribution = []
+    for i in range(steps+1):
+        distribution.append(binomial_return(i, up_return, up_probability, start_price, steps))
+    return distribution
+    
 
 
 
@@ -76,7 +84,7 @@ def randomize_stock_price_change(share_price, up_probability, up_return, down_re
 
 
 #Inputs
-num_of_simulations = 1000
+num_of_simulations = 500
 sets_of_sims = 1
 up_probability = .5
 down_probability = .5
@@ -84,6 +92,10 @@ up_return = .1
 down_return = .1
 callput = "c"
 option_position = 1
+initial_stock_price = 100
+total_steps_til_expiry = 15
+
+
 
 # Initialize tables before the loop
 simulation_table = pd.DataFrame(columns = ['sim_number', 'trial', 'option_position', 'strike', 'terminal_price', 'stock_return', 'delta_hedged_P/L'])
@@ -94,10 +106,9 @@ for j in range(sets_of_sims):
 
     for i in range(num_of_simulations):
         
-        stock_price = 100
-        strike = 100
+        stock_price = initial_stock_price
+        strike = 110
         current_step = 0
-        total_steps_til_expiry = 10
         remaining_steps_til_expiry = total_steps_til_expiry - current_step
 
         tree = create_tree(stock_price, remaining_steps_til_expiry, up_probability, up_return, down_probability, down_return)
@@ -207,7 +218,7 @@ for j in range(sets_of_sims):
             'trial': i+1,
             'option_position': option_position,
             'strike': strike,
-            'terminal_price': round(stock_price,1),
+            'terminal_price': round(stock_price,2),
             'stock_return': round((stock_price/portfolio['share_price'].iloc[0]-1),3),
             'delta_hedged_P/L': round(delta_hedged_profit,0),
         }
@@ -219,43 +230,7 @@ for j in range(sets_of_sims):
        
        
     
-    
-    
-    fig, ax = plt.subplots(2, 1, figsize=(10, 15))
-    
-    # Plot 1: Histogram of Terminal Prices
-    sns.histplot(simulation_table['terminal_price'], kde=True, ax=ax[0], stat="percent")
-    ax[0].set_title('Distribution of Terminal Prices')
-    ax[0].set_xlabel('Terminal Price')
-    ax[0].set_ylabel('Percentage')
-    
-    # Add percentage sign to y-axis labels
-    ax[0].yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _: '{:.0f}%'.format(y)))
-    
-    # # Plot 1: Histogram of Terminal Prices
-    # sns.histplot(simulation_table['delta_hedged_P/L'], kde=True, ax=ax[0])
-    # ax[0].set_title('Distribution of Delta-Hedged P/Ls')
-    # ax[0].set_xlabel('Terminal Price')
-    # ax[0].set_ylabel('Frequency')
-    
-       
-    
-    # Plot 2: Scatter plot between Terminal Prices and Delta Hedged P/L
-    sns.barplot(x='terminal_price', y='delta_hedged_P/L', data=simulation_table, ax=ax[1])
-    ax[1].set_title('Scatter plot between Terminal Prices and Delta Hedged P/L')
-    ax[1].set_xlabel('Terminal Price')
-    ax[1].set_ylabel('Delta Hedged P/L')
-    
-    
-    plt.show()
-    
-    
-        
-   
-    
-       
-    
-     
+         
     """there are only steps+1 possible terminal prices, i want to see the p/l distribution for each of them"""
     grouped = simulation_table.groupby('terminal_price')['delta_hedged_P/L']
     
@@ -322,12 +297,96 @@ print("Modal_stock_return:", round(simulation_table['stock_return'].mode(),3))
 end_time = time.time()
 
 elapsed_time = round(end_time - start_time,0)
+
+
+#theoretical duistribution
+distribution = theo_binomial_distribution(total_steps_til_expiry, up_return, up_probability, initial_stock_price)
+distro_df = pd.DataFrame(distribution, columns=['terminal_price', 'theo_frequency'])
+distro_df['theo_frequency'] = distro_df['theo_frequency'].round(4)
+
+#actual distribution
+terminal_price_proportions = simulation_table['terminal_price'].value_counts(normalize=True)
+terminal_price_proportions = terminal_price_proportions.reset_index()
+terminal_price_proportions.columns = ['terminal_price', 'actual_frequency']
+terminal_price_proportions.sort_values(by='terminal_price', inplace=True)
+terminal_price_proportions['actual_frequency'] = terminal_price_proportions['actual_frequency'].round(4)
+
+#merging the table
+decimals = 2
+distro_df['terminal_price'] = distro_df['terminal_price'].round(decimals)
+terminal_price_proportions['terminal_price'] = terminal_price_proportions['terminal_price'].round(decimals)
+
+merged_df = distro_df.merge(terminal_price_proportions, on='terminal_price', how='left')
+merged_df['actual-theo'] = merged_df['actual_frequency']-merged_df['theo_frequency']
+
+
+
+print("")
+print(merged_df)
+
+print("")
 print(f"The code took {elapsed_time} seconds to run.")
-    
         
-    
-        
-        
+
+
+
+# First Figure
+fig1, ax1 = plt.subplots(2, 1, figsize=(10, 10)) 
+
+# Plot 1: Histogram of Terminal Prices
+sns.histplot(simulation_table['terminal_price'], kde=True, ax=ax1[0], stat="percent")
+ax1[0].set_title('Distribution of Terminal Prices')
+ax1[0].set_xlabel('Terminal Price')
+ax1[0].set_ylabel('Percentage')
+ax1[0].yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _: '{:.0f}%'.format(y)))
+
+# Plot 2: Scatter plot between Terminal Prices and Delta Hedged P/L
+sns.barplot(x='terminal_price', y='delta_hedged_P/L', data=simulation_table, ax=ax1[1])
+ax1[1].set_title('Scatter plot between Terminal Prices and Delta Hedged P/L')
+ax1[1].set_xlabel('Terminal Price')
+ax1[1].set_ylabel('Delta Hedged P/L')
+
+plt.tight_layout()
+plt.show()
+
+# Second Figure
+fig2, ax2 = plt.subplots(2, 1, figsize=(10, 10)) 
+
+# Plot 3: Bar chart of Actual and Theoretical Frequencies
+position = list(range(len(merged_df['terminal_price'])))
+width = 0.4
+ax2[0].bar(position, merged_df['actual_frequency'], width=width, label='Actual Frequency', color='blue', edgecolor='gray')
+ax2[0].bar([p + width for p in position], merged_df['theo_frequency'], width=width, label='Theoretical Frequency', color='black', edgecolor='gray')
+ax2[0].set_xticks([p + 0.5 * width for p in position])
+ax2[0].set_xticklabels(merged_df['terminal_price'].values, rotation=45, ha='right')
+ax2[0].set_title('Comparison of Actual and Theoretical Frequencies for each Terminal Price')
+ax2[0].set_xlabel('Terminal Price')
+ax2[0].set_ylabel('Frequency')
+ax2[0].legend(['Actual Frequency', 'Theoretical Frequency'], loc='upper left')
+ax2[0].grid(axis='y')
+ax2[0].yaxis.set_major_formatter(mticker.PercentFormatter(1.0, decimals=0))  # Format as percent with 1 decimal
+
+# Plot 4: Difference between Actual and Theoretical Frequencies
+sns.barplot(x='terminal_price', y='actual-theo', data=merged_df, ax=ax2[1], color='blue', edgecolor='black')
+ax2[1].set_title('Difference between Actual and Theoretical Frequencies')
+ax2[1].set_xlabel('Terminal Price')
+ax2[1].set_ylabel('Actual - Theoretical (%)')
+ax2[1].grid(axis='y')
+ax2[1].yaxis.set_major_formatter(mticker.PercentFormatter(1.0, decimals=1))  # Format as percent with 1 decimal
+
+plt.tight_layout()
+plt.show()
+
+
+
+
+  
+
+
+
+
+
+
 
 
     
