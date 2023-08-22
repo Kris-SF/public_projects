@@ -85,7 +85,7 @@ def randomize_stock_price_change(share_price, up_probability, up_return, down_re
 
 #Inputs
 num_of_simulations = 500
-sets_of_sims = 1
+sets_of_sims = 2
 up_probability = .5
 down_probability = .5
 up_return = .1
@@ -93,7 +93,7 @@ down_return = .1
 callput = "c"
 option_position = 1
 initial_stock_price = 100
-total_steps_til_expiry = 15
+total_steps_til_expiry = 3
 
 
 
@@ -256,7 +256,24 @@ for j in range(sets_of_sims):
     print("st_dev_scaled_to_initial_option_premium:", round(.01*round(sim_std_dev,0)/portfolio['option_price'].iloc[0],3))
     print("")
 
-    
+    # First Figure
+    fig1, ax1 = plt.subplots(2, 1, figsize=(10, 10)) 
+
+    # Plot 1: Histogram of Terminal Prices
+    sns.histplot(simulation_table['terminal_price'], kde=True, ax=ax1[0], stat="percent")
+    ax1[0].set_title('Distribution of Terminal Prices')
+    ax1[0].set_xlabel('Terminal Price')
+    ax1[0].set_ylabel('Percentage')
+    ax1[0].yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _: '{:.0f}%'.format(y)))
+
+    # Plot 2: Scatter plot between Terminal Prices and Delta Hedged P/L
+    sns.barplot(x='terminal_price', y='delta_hedged_P/L', data=simulation_table, ax=ax1[1])
+    ax1[1].set_title('Scatter plot between Terminal Prices and Delta Hedged P/L')
+    ax1[1].set_xlabel('Terminal Price')
+    ax1[1].set_ylabel('Delta Hedged P/L')
+
+    plt.tight_layout()
+    plt.show()
 
 
 
@@ -324,30 +341,16 @@ merged_df['actual-theo'] = merged_df['actual_frequency']-merged_df['theo_frequen
 print("")
 print(merged_df)
 
+
+
+
 print("")
 print(f"The code took {elapsed_time} seconds to run.")
         
 
 
 
-# First Figure
-fig1, ax1 = plt.subplots(2, 1, figsize=(10, 10)) 
 
-# Plot 1: Histogram of Terminal Prices
-sns.histplot(simulation_table['terminal_price'], kde=True, ax=ax1[0], stat="percent")
-ax1[0].set_title('Distribution of Terminal Prices')
-ax1[0].set_xlabel('Terminal Price')
-ax1[0].set_ylabel('Percentage')
-ax1[0].yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _: '{:.0f}%'.format(y)))
-
-# Plot 2: Scatter plot between Terminal Prices and Delta Hedged P/L
-sns.barplot(x='terminal_price', y='delta_hedged_P/L', data=simulation_table, ax=ax1[1])
-ax1[1].set_title('Scatter plot between Terminal Prices and Delta Hedged P/L')
-ax1[1].set_xlabel('Terminal Price')
-ax1[1].set_ylabel('Delta Hedged P/L')
-
-plt.tight_layout()
-plt.show()
 
 # Second Figure
 fig2, ax2 = plt.subplots(2, 1, figsize=(10, 10)) 
@@ -372,10 +375,13 @@ ax2[1].set_title('Difference between Actual and Theoretical Frequencies')
 ax2[1].set_xlabel('Terminal Price')
 ax2[1].set_ylabel('Actual - Theoretical (%)')
 ax2[1].grid(axis='y')
-ax2[1].yaxis.set_major_formatter(mticker.PercentFormatter(1.0, decimals=1))  # Format as percent with 1 decimal
+ax2[1].yaxis.set_major_formatter(mticker.PercentFormatter(1.0, decimals=2))  # Format as percent with 1 decimal
 
 plt.tight_layout()
 plt.show()
+
+
+
 
 
 
