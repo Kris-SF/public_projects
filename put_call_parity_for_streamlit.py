@@ -26,7 +26,7 @@ def display_question():
     
     call = max(0, round(spot - strike + put + carry, 2))
 
-    st.write(f"Questions Remaining: {st.session_state.num_games - st.session_state.games_played}")
+    st.write(f"Questions Remaining: {st.session_state.num_games - st.session_state.correct}")
 
     if missing_variable != 'spot':
         st.write(f"Spot: {spot}")
@@ -53,37 +53,31 @@ def display_question():
 
         if correct_values[missing_variable] == user_value:
             st.session_state.correct += 1
-            st.session_state.games_played += 1
             st.success("Correct!")
-            check_game_end()  # Check if the game should end after a correct answer
-            return True
+            if st.session_state.correct == st.session_state.num_games:
+                check_game_end()
+                return
+            else:
+                display_question()
         else:
             st.error("Incorrect! Try again.")
-            return False
 
 def check_game_end():
-    if st.session_state.games_played == st.session_state.num_games:
-        accuracy = (st.session_state.correct / st.session_state.num_games) * 100
-        st.write(f"Game Over! Your accuracy is: {accuracy:.2f}%")
-        if 'restart_button' not in st.session_state or not st.session_state.restart_button:
-            st.session_state.restart_button = st.button("Play Again?")
-            if st.session_state.restart_button:
-                st.session_state.games_played = 0
-                st.session_state.correct = 0
-                st.session_state.restart_button = False
+    st.write(f"Game Over! You reached {st.session_state.correct} correct answers.")
+    restart_button = st.button("Play Again?")
+    if restart_button:
+        st.session_state.correct = 0
 
 if __name__ == "__main__":
-    st.title("Put-Call Parity Game")
+    st.title("Finance Game")
     
     # Initializing or resetting session state variables
-    if 'games_played' not in st.session_state:
-        st.session_state.games_played = 0
     if 'correct' not in st.session_state:
         st.session_state.correct = 0
-    if 'num_games' not in st.session_state or 'restart_button' in st.session_state and st.session_state.restart_button:
-        st.session_state.num_games = st.number_input("How many times do you want to play?", min_value=1, max_value=100, value=1, step=1)
+    if 'num_games' not in st.session_state:
+        st.session_state.num_games = st.number_input("How many correct answers do you want to achieve?", min_value=1, max_value=100, value=1, step=1)
     
-    if st.session_state.games_played < st.session_state.num_games:
+    if st.session_state.correct < st.session_state.num_games:
         display_question()
     else:
         check_game_end()
