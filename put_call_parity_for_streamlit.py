@@ -7,7 +7,6 @@ Created on Fri Aug 25 22:56:04 2023
 
 import streamlit as st
 import random
-import time
 
 def get_random_value(min_val, max_val, decimals=0):
     return round(random.uniform(min_val, max_val), decimals)
@@ -51,10 +50,30 @@ def play_game():
         }
 
         if correct_values[missing_variable] == user_value:
+            st.session_state.correct += 1
             st.success("Correct!")
         else:
             st.error("Incorrect! Try again.")
+        st.session_state.games_played += 1
+        
+        if st.session_state.games_played == st.session_state.num_games:
+            st.write(f"Game Over! Your accuracy is: {st.session_state.correct / st.session_state.num_games * 100}%")
+            if 'restart_button' not in st.session_state:
+                st.session_state.restart_button = st.button("Play Again?")
+                if st.session_state.restart_button:
+                    st.session_state.games_played = 0
+                    st.session_state.correct = 0
+                    st.session_state.restart_button = False
 
 if __name__ == "__main__":
     st.title("Put-Call Parity Game")
+    
+    # Initializing or resetting session state variables
+    if 'games_played' not in st.session_state:
+        st.session_state.games_played = 0
+    if 'correct' not in st.session_state:
+        st.session_state.correct = 0
+    if 'num_games' not in st.session_state:
+        st.session_state.num_games = st.number_input("How many times do you want to play?", min_value=1, max_value=100, value=1, step=1)
+    
     play_game()
