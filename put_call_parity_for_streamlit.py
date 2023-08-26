@@ -55,10 +55,22 @@ def display_question():
             st.session_state.correct += 1
             st.session_state.games_played += 1
             st.success("Correct!")
-            return True  # Indicates the answer was correct
+            check_game_end()  # Check if the game should end after a correct answer
+            return True
         else:
             st.error("Incorrect! Try again.")
-            return False  # Indicates the answer was wrong
+            return False
+
+def check_game_end():
+    if st.session_state.games_played == st.session_state.num_games:
+        accuracy = (st.session_state.correct / st.session_state.num_games) * 100
+        st.write(f"Game Over! Your accuracy is: {accuracy:.2f}%")
+        if 'restart_button' not in st.session_state or not st.session_state.restart_button:
+            st.session_state.restart_button = st.button("Play Again?")
+            if st.session_state.restart_button:
+                st.session_state.games_played = 0
+                st.session_state.correct = 0
+                st.session_state.restart_button = False
 
 if __name__ == "__main__":
     st.title("Finance Game")
@@ -72,14 +84,6 @@ if __name__ == "__main__":
         st.session_state.num_games = st.number_input("How many times do you want to play?", min_value=1, max_value=100, value=1, step=1)
     
     if st.session_state.games_played < st.session_state.num_games:
-        correct = display_question()
-        if correct:
-            if st.session_state.games_played == st.session_state.num_games:
-                accuracy = (st.session_state.correct / st.session_state.num_games) * 100
-                st.write(f"Game Over! Your accuracy is: {accuracy:.2f}%")
-                if 'restart_button' not in st.session_state:
-                    st.session_state.restart_button = st.button("Play Again?")
-                    if st.session_state.restart_button:
-                        st.session_state.games_played = 0
-                        st.session_state.correct = 0
-                        st.session_state.restart_button = False
+        display_question()
+    else:
+        check_game_end()
