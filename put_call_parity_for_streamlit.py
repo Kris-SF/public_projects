@@ -11,7 +11,7 @@ import random
 def get_random_value(min_val, max_val, decimals=0):
     return round(random.uniform(min_val, max_val), decimals)
 
-def play_game():
+def display_question():
     options = ['spot', 'strike', 'carry', 'call', 'put']
     missing_variable = random.choice(options)
     
@@ -53,20 +53,12 @@ def play_game():
 
         if correct_values[missing_variable] == user_value:
             st.session_state.correct += 1
-            st.success("Correct!")
             st.session_state.games_played += 1
+            st.success("Correct!")
+            return True  # Indicates the answer was correct
         else:
             st.error("Incorrect! Try again.")
-
-        if st.session_state.games_played == st.session_state.num_games:
-            accuracy = (st.session_state.correct / st.session_state.num_games) * 100
-            st.write(f"Game Over! Your accuracy is: {accuracy:.2f}%")
-            if 'restart_button' not in st.session_state:
-                st.session_state.restart_button = st.button("Play Again?")
-                if st.session_state.restart_button:
-                    st.session_state.games_played = 0
-                    st.session_state.correct = 0
-                    st.session_state.restart_button = False
+            return False  # Indicates the answer was wrong
 
 if __name__ == "__main__":
     st.title("Finance Game")
@@ -79,4 +71,15 @@ if __name__ == "__main__":
     if 'num_games' not in st.session_state or 'restart_button' in st.session_state and st.session_state.restart_button:
         st.session_state.num_games = st.number_input("How many times do you want to play?", min_value=1, max_value=100, value=1, step=1)
     
-    play_game()
+    if st.session_state.games_played < st.session_state.num_games:
+        correct = display_question()
+        if correct:
+            if st.session_state.games_played == st.session_state.num_games:
+                accuracy = (st.session_state.correct / st.session_state.num_games) * 100
+                st.write(f"Game Over! Your accuracy is: {accuracy:.2f}%")
+                if 'restart_button' not in st.session_state:
+                    st.session_state.restart_button = st.button("Play Again?")
+                    if st.session_state.restart_button:
+                        st.session_state.games_played = 0
+                        st.session_state.correct = 0
+                        st.session_state.restart_button = False
