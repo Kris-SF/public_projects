@@ -41,9 +41,10 @@ def play_game():
     st.write(f"Call: {call if missing_variable != 'call' else '??'}")
     st.write(f"Put: {put if missing_variable != 'put' else '??'}")
 
+    
     correct = False
     while not correct:
-        user_input = st.text_input(f"Enter the value for {missing_variable}:")
+        user_input = st.text_input(f"Enter the value for {missing_variable}:", key=f"{missing_variable}_input")
         if user_input:  # check if input is not empty
             user_input = float(user_input)
             if user_input == variables[missing_variable]:
@@ -52,6 +53,7 @@ def play_game():
                 correct = True
             else:
                 st.write("Incorrect! Try again.")
+
 
 # Start of the main app
 st.title("Finance Game")
