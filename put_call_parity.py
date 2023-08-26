@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Created on Fri Aug 25 21:10:30 2023
+Created on Fri Aug 25 22:56:04 2023
 
 @author: kpa32
 """
 
+import streamlit as st
 import random
-import time
 
 def get_random_value(min_val, max_val, decimals=0):
     return round(random.uniform(min_val, max_val), decimals)
 
-def play_game():
+def display_question():
     options = ['spot', 'strike', 'carry', 'call', 'put']
     missing_variable = random.choice(options)
     
@@ -24,55 +24,66 @@ def play_game():
     elif spot < strike:   
         put = round(get_random_value(0, .1 * strike, 2) + (strike - spot), 2)
     
-    call = max(0, round(spot-strike + put + carry, 2))
+    call = max(0, round(spot - strike + put + carry, 2))
 
-    # Printing values without showing the missing variable
+    st.write(f"Questions Remaining: {st.session_state.num_games - st.session_state.games_played}")
+
     if missing_variable != 'spot':
-        print(f"Spot: {spot}")
+        st.write(f"Spot: {spot}")
     if missing_variable != 'strike':
-        print(f"Strike: {strike}")
+        st.write(f"Strike: {strike}")
     if missing_variable != 'carry':
-        print(f"Carry: {carry}")
+        st.write(f"Carry: {carry}")
     if missing_variable != 'call':
-        print(f"Call: {call}")
+        st.write(f"Call: {call}")
     if missing_variable != 'put':
-        print(f"Put: {put}")
+        st.write(f"Put: {put}")
 
-    start_time = time.time()
-    total_attempts = 0
+    user_input = st.text_input(f"Enter the value for {missing_variable}:")
+    
+    if user_input:
+        user_value = float(user_input)
+        correct_values = {
+            'spot': spot,
+            'strike': strike,
+            'carry': carry,
+            'call': call,
+            'put': put
+        }
 
-    while True:
-        user_input = float(input(f"\nEnter the value for {missing_variable}: "))
-        total_attempts += 1
-        
-        if (missing_variable == 'spot' and user_input == spot) or \
-           (missing_variable == 'strike' and int(user_input) == strike) or \
-           (missing_variable == 'carry' and user_input == carry) or \
-           (missing_variable == 'call' and user_input == call) or \
-           (missing_variable == 'put' and user_input == put):
-            print("Correct!")
-            return 1, total_attempts, time.time() - start_time
+        if correct_values[missing_variable] == user_value:
+            st.session_state.correct += 1
+            st.session_state.games_played += 1
+            st.success("Correct!")
+            check_game_end()  # Check if the game should end after a correct answer
+            return True
         else:
-            print("Incorrect! Try again.")
+            st.error("Incorrect! Try again.")
+            return False
 
-def main():
-    num_times = int(input("How many times do you want to play? "))
-    correct_count = 0
-    total_attempts = 0
-    total_time = 0
+def check_game_end():
+    if st.session_state.games_played == st.session_state.num_games:
+        accuracy = (st.session_state.correct / st.session_state.num_games) * 100
+        st.write(f"Game Over! Your accuracy is: {accuracy:.2f}%")
+        if 'restart_button' not in st.session_state or not st.session_state.restart_button:
+            st.session_state.restart_button = st.button("Play Again?")
+            if st.session_state.restart_button:
+                st.session_state.games_played = 0
+                st.session_state.correct = 0
+                st.session_state.restart_button = False
 
-    for _ in range(num_times):
-        correct, attempts, duration = play_game()
-        correct_count += correct
-        total_attempts += attempts
-        total_time += duration
-
-    accuracy = (correct_count / total_attempts) * 100
-    average_time = total_time / num_times
-
-    print(f"\nYour accuracy: {accuracy:.2f}%")
-    print(f"Average time per question: {average_time:.2f} seconds")
-
-main()
-
-
+if __name__ == "__main__":
+    st.title("Finance Game")
+    
+    # Initializing or resetting session state variables
+    if 'games_played' not in st.session_state:
+        st.session_state.games_played = 0
+    if 'correct' not in st.session_state:
+        st.session_state.correct = 0
+    if 'num_games' not in st.session_state or 'restart_button' in st.session_state and st.session_state.restart_button:
+        st.session_state.num_games = st.number_input("How many times do you want to play?", min_value=1, max_value=100, value=1, step=1)
+    
+    if st.session_state.games_played < st.session_state.num_games:
+        display_question()
+    else:
+        check_game_end()
