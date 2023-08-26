@@ -73,7 +73,7 @@ def check_game_end():
                 st.session_state.restart_button = False
 
 if __name__ == "__main__":
-    st.title("Finance Game")
+    st.title("Put-Call Parity Game")
     
     # Initializing or resetting session state variables
     if 'games_played' not in st.session_state:
