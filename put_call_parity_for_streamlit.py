@@ -56,5 +56,5 @@ def play_game():
             st.error("Incorrect! Try again.")
 
 if __name__ == "__main__":
-    st.title("Finance Game")
+    st.title("Put-Call Parity Game")
     play_game()
