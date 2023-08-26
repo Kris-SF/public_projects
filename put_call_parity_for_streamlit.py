@@ -11,20 +11,29 @@ import random
 def get_random_value(min_val, max_val, decimals=0):
     return round(random.uniform(min_val, max_val), decimals)
 
-def display_question():
-    options = ['spot', 'strike', 'carry', 'call', 'put']
-    missing_variable = random.choice(options)
-    
-    spot = get_random_value(10, 110, 2)
-    strike = get_random_value(.9*spot, 1.1 * spot, 0)
-    carry = get_random_value(-0.05 * spot, 0.05 * spot, 2)
-    
-    if spot > strike:
-        put = get_random_value(0, .1 * strike, 2)
-    elif spot < strike:   
-        put = round(get_random_value(0, .1 * strike, 2) + (strike - spot), 2)
-    
-    call = max(0, round(spot - strike + put + carry, 2))
+def display_question(missing_variable=None, correct_values=None):
+    if missing_variable is None or correct_values is None:
+        options = ['spot', 'strike', 'carry', 'call', 'put']
+        missing_variable = random.choice(options)
+
+        spot = get_random_value(10, 110, 2)
+        strike = get_random_value(.9*spot, 1.1 * spot, 0)
+        carry = get_random_value(-0.05 * spot, 0.05 * spot, 2)
+        
+        if spot > strike:
+            put = get_random_value(0, .1 * strike, 2)
+        elif spot < strike:   
+            put = round(get_random_value(0, .1 * strike, 2) + (strike - spot), 2)
+        
+        call = max(0, round(spot - strike + put + carry, 2))
+
+        correct_values = {
+            'spot': spot,
+            'strike': strike,
+            'carry': carry,
+            'call': call,
+            'put': put
+        }
 
     st.write(f"Questions Remaining: {st.session_state.num_games - st.session_state.correct}")
 
@@ -40,36 +49,30 @@ def display_question():
         st.write(f"Put: {put}")
 
     user_input = st.text_input(f"Enter the value for {missing_variable}:")
-    
+
     if user_input:
         user_value = float(user_input)
-        correct_values = {
-            'spot': spot,
-            'strike': strike,
-            'carry': carry,
-            'call': call,
-            'put': put
-        }
-
         if correct_values[missing_variable] == user_value:
             st.session_state.correct += 1
             st.success("Correct!")
-            if st.session_state.correct == st.session_state.num_games:
-                check_game_end()
-                return
-            else:
+            if st.session_state.correct < st.session_state.num_games:
                 display_question()
+            else:
+                check_game_end()
         else:
             st.error("Incorrect! Try again.")
+            display_question(missing_variable, correct_values)
 
 def check_game_end():
     st.write(f"Game Over! You reached {st.session_state.correct} correct answers.")
     restart_button = st.button("Play Again?")
     if restart_button:
         st.session_state.correct = 0
+        st.session_state.num_games = st.number_input("How many correct answers do you want to achieve?", min_value=1, max_value=100, value=1, step=1)
+        display_question()
 
 if __name__ == "__main__":
-    st.title("Finance Game")
+    st.title("PC Parity Game")
     
     # Initializing or resetting session state variables
     if 'correct' not in st.session_state:
