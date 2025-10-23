@@ -1,14 +1,10 @@
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Slider } from "@/components/ui/slider";
-import { Badge } from "@/components/ui/badge";
-import { Info, Play, RotateCcw } from "lucide-react";
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Line, Legend } from "recharts";
+import { Info } from "lucide-react";
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 
 /**
  * Retirement Monte Carlo Calculator (Inflation-adjusted, simple taxes)
@@ -61,10 +57,6 @@ type Inputs = {
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
-}
-
-function mulSafe(a: number, b: number) {
-  return Number.isFinite(a) && Number.isFinite(b) ? a * b : 0;
 }
 
 function realFromNominal(muNom: number, infl: number) {
@@ -190,10 +182,6 @@ function simulate(inputs: Inputs) {
     ? paths.filter((p) => p[p.length - 1] >= inputs.legacyTarget).length / inputs.nPaths
     : null;
 
-  const worst5thDepletion = depletionYear
-    .filter((d) => d !== null)
-    .sort((a, b) => (a as number) - (b as number))[Math.floor(0.05 * depletionYear.filter((d) => d !== null).length)];
-
   return { perYear, successRate, breachLegacy, depletionYear, horizon, yearsToRetire, yearsRetired };
 }
 
@@ -227,7 +215,7 @@ export default function App() {
     legacyTarget: 0,
   });
 
-  const { perYear, successRate, breachLegacy, horizon, yearsToRetire, yearsRetired } = useMemo(
+  const { perYear, successRate, breachLegacy, yearsToRetire, yearsRetired } = useMemo(
     () => simulate(inputs),
     [inputs]
   );
