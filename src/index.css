@@ -1,61 +1,64 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Moontower Mathematical Curves Palette */
+    --background: 44 14% 96%;  /* #F6F4EE Parchment White */
+    --foreground: 210 45% 17%;  /* #182B40 Deep Navy */
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 210 45% 17%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --popover-foreground: 210 45% 17%;
+    --primary: 189 100% 45%;  /* #00C4E7 Electric Cyan */
+    --primary-foreground: 210 45% 17%;
+    --secondary: 0 0% 81%;  /* #CFCFCF Graph Gray */
+    --secondary-foreground: 210 45% 17%;
+    --muted: 0 0% 81%;
+    --muted-foreground: 210 45% 17%;
+    --accent: 189 100% 45%;
+    --accent-foreground: 210 45% 17%;
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    --destructive-foreground: 44 14% 96%;
+    --border: 0 0% 81%;
+    --input: 0 0% 81%;
+    --ring: 189 100% 45%;
+    --chart-1: 189 100% 45%;  /* Electric Cyan */
+    --chart-2: 210 45% 17%;   /* Deep Navy */
+    --chart-3: 0 0% 81%;      /* Graph Gray */
+    --chart-4: 189 100% 35%;  /* Darker Cyan */
+    --chart-5: 210 45% 27%;   /* Lighter Navy */
     --radius: 0.5rem;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --background: 210 45% 17%;  /* #182B40 Deep Navy */
+    --foreground: 44 14% 96%;   /* #F6F4EE Parchment White */
+    --card: 210 45% 20%;
+    --card-foreground: 44 14% 96%;
+    --popover: 210 45% 20%;
+    --popover-foreground: 44 14% 96%;
+    --primary: 189 100% 45%;  /* #00C4E7 Electric Cyan */
+    --primary-foreground: 210 45% 17%;
+    --secondary: 0 0% 81%;
+    --secondary-foreground: 210 45% 17%;
+    --muted: 210 45% 25%;
+    --muted-foreground: 0 0% 81%;
+    --accent: 189 100% 45%;
+    --accent-foreground: 210 45% 17%;
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    --destructive-foreground: 44 14% 96%;
+    --border: 210 45% 25%;
+    --input: 210 45% 25%;
+    --ring: 189 100% 45%;
+    --chart-1: 189 100% 45%;
+    --chart-2: 44 14% 96%;
+    --chart-3: 0 0% 81%;
+    --chart-4: 189 100% 55%;
+    --chart-5: 44 14% 86%;
   }
 
   * {
@@ -64,6 +67,15 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: 'Inter', sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Space Grotesk', sans-serif;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
   }
 }

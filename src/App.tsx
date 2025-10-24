@@ -275,11 +275,12 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-full bg-slate-50 grid grid-cols-12 gap-4 p-4">
+    <div className="h-screen w-full bg-background grid grid-cols-12 gap-4 p-4">
       <div className="col-span-4 overflow-auto">
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Assumptions (Real‑dollar outputs)</CardTitle>
+          <CardHeader className="pb-2 bg-primary/10 rounded-t-lg">
+            <CardTitle className="text-lg font-space-grotesk">Assumptions</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">Real‑dollar outputs</p>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
@@ -317,10 +318,10 @@ export default function App() {
               {numberField("seed", "Random seed", 1)}
             </div>
 
-            <div className="flex items-center justify-between border rounded-xl p-3">
+            <div className="flex items-center justify-between border border-primary/20 rounded-lg p-3 bg-primary/5">
               <div>
-                <Label className="font-medium">Guardrails</Label>
-                <div className="text-xs text-slate-500">Reduce spending 10% in stress years</div>
+                <Label className="font-medium font-space-grotesk">Guardrails</Label>
+                <div className="text-xs text-muted-foreground">Reduce spending 10% in stress years</div>
               </div>
               <Switch checked={inputs.guardrails} onCheckedChange={(v) => set("guardrails", v)} />
             </div>
@@ -330,8 +331,8 @@ export default function App() {
               <div className="text-xs text-slate-500 self-end">Leave 0 to ignore</div>
             </div>
 
-            <div className="text-xs text-slate-500 flex items-start gap-2">
-              <Info className="h-4 w-4 mt-0.5" />
+            <div className="text-xs text-muted-foreground flex items-start gap-2 p-3 bg-primary/5 rounded-lg border border-primary/10">
+              <Info className="h-4 w-4 mt-0.5 text-primary" />
               <span>Outputs use real (inflation‑adjusted) dollars. Returns entered as nominal are converted to real using your inflation input.</span>
             </div>
           </CardContent>
@@ -339,9 +340,9 @@ export default function App() {
       </div>
 
       <div className="col-span-8 overflow-auto">
-        <Card className="mb-4">
-          <CardHeader className="pb-0">
-            <CardTitle className="text-base">Results</CardTitle>
+        <Card className="mb-4 border-primary/20">
+          <CardHeader className="pb-0 bg-primary/5">
+            <CardTitle className="text-lg font-space-grotesk">Results</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-3 gap-3 pt-2">
             <Stat label="Success probability" value={percent(successRate)} />
@@ -354,26 +355,27 @@ export default function App() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Portfolio Value (real $) — median & bands</CardTitle>
+        <Card className="border-primary/20">
+          <CardHeader className="pb-2 bg-primary/5">
+            <CardTitle className="text-lg font-space-grotesk">Portfolio Value (real $)</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">Median & confidence bands</p>
           </CardHeader>
           <CardContent className="h-[420px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={rows} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
                 <defs>
-                  <linearGradient id="p25" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#5a63ef" stopOpacity={0.25} />
-                    <stop offset="100%" stopColor="#5a63ef" stopOpacity={0.02} />
+                  <linearGradient id="cyan-gradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#00C4E7" stopOpacity={0.3} />
+                    <stop offset="100%" stopColor="#00C4E7" stopOpacity={0.05} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="label" interval={Math.max(0, Math.floor(rows.length / 8))} />
-                <YAxis tickFormatter={(v) => (v / 1000).toFixed(0) + "k"} />
-                <Tooltip formatter={(v: any) => fmtUSD(v)} />
-                <Area type="monotone" dataKey="p75" stroke="#b3b7ff" fillOpacity={0} />
-                <Area type="monotone" dataKey="p50" stroke="#5a63ef" fill="url(#p25)" />
-                <Area type="monotone" dataKey="p25" stroke="#b3b7ff" fillOpacity={0} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#CFCFCF" opacity={0.3} />
+                <XAxis dataKey="label" interval={Math.max(0, Math.floor(rows.length / 8))} stroke="#182B40" style={{ fontSize: 12, fontFamily: 'JetBrains Mono' }} />
+                <YAxis tickFormatter={(v) => (v / 1000).toFixed(0) + "k"} stroke="#182B40" style={{ fontSize: 12, fontFamily: 'JetBrains Mono' }} />
+                <Tooltip formatter={(v: any) => fmtUSD(v)} contentStyle={{ backgroundColor: '#F6F4EE', border: '1px solid #CFCFCF', borderRadius: '8px', fontFamily: 'Inter' }} />
+                <Area type="monotone" dataKey="p75" stroke="#CFCFCF" strokeWidth={1.5} fillOpacity={0} />
+                <Area type="monotone" dataKey="p50" stroke="#00C4E7" strokeWidth={2.5} fill="url(#cyan-gradient)" />
+                <Area type="monotone" dataKey="p25" stroke="#CFCFCF" strokeWidth={1.5} fillOpacity={0} />
               </AreaChart>
             </ResponsiveContainer>
           </CardContent>
@@ -385,9 +387,9 @@ export default function App() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="p-3 rounded-xl border bg-white">
-      <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="text-xl font-semibold">{value}</div>
+    <div className="p-4 rounded-lg border border-primary/20 bg-card hover:border-primary/40 transition-colors">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-jetbrains">{label}</div>
+      <div className="text-2xl font-semibold text-primary font-space-grotesk mt-1">{value}</div>
     </div>
   );
 }
