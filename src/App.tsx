@@ -10,9 +10,11 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<ViewMode>('voting')
   const [submitting, setSubmitting] = useState(false)
+  const [sessionCount, setSessionCount] = useState(0)
 
   useEffect(() => {
     fetchItems()
+    fetchSessionCount()
   }, [])
 
   async function fetchItems() {
@@ -56,6 +58,21 @@ export default function App() {
     setLoading(false)
   }
 
+  async function fetchSessionCount() {
+    const { data, error } = await supabase
+      .from('likes')
+      .select('session_id')
+
+    if (error) {
+      console.error('Error fetching sessions:', error)
+      return
+    }
+
+    // Count unique session IDs
+    const uniqueSessions = new Set(data?.map(like => like.session_id) || [])
+    setSessionCount(uniqueSessions.size)
+  }
+
   function toggleVote(itemId: string) {
     setUserVotes(prev => {
       const newSet = new Set(prev)
@@ -96,6 +113,7 @@ export default function App() {
 
     // Refresh items to get updated counts
     await fetchItems()
+    await fetchSessionCount()
     setSubmitting(false)
     setViewMode('results')
   }
@@ -133,7 +151,7 @@ export default function App() {
               Results: 50 Things Sasha Knows
             </h1>
             <p className="text-foreground/80 text-lg max-w-2xl mx-auto leading-relaxed mb-6">
-              Here's how everyone voted across all {items.reduce((sum, item) => sum + item.likes_count, 0)} total votes
+              {sessionCount} {sessionCount === 1 ? 'person has' : 'people have'} voted so far
             </p>
           </div>
 
