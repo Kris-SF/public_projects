@@ -139,11 +139,22 @@ export default function App() {
         {/* Header */}
         <div className="text-center mb-12">
           <h1 className="text-5xl font-bold text-foreground mb-4 font-space-grotesk">
-            50 Things I Know
+            50 Things Sasha Knows
           </h1>
-          <p className="text-foreground/80 text-lg max-w-2xl mx-auto leading-relaxed">
-            Vote for the things you find resonant. You can vote for as many items as you want.
-            Click the heart to toggle your vote!
+          <p className="text-foreground/80 text-lg max-w-2xl mx-auto leading-relaxed mb-6">
+            From Sasha Chapin's essay{' '}
+            <a
+              href="https://sashachapin.substack.com/p/50-things-i-know"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline font-semibold"
+            >
+              "50 Things I Know"
+            </a>
+            . Vote for the things you find most resonant.
+          </p>
+          <p className="text-foreground/60 text-base max-w-2xl mx-auto">
+            Click the moon to toggle your vote — you can vote for as many as you want!
           </p>
         </div>
 
