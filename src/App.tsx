@@ -12,7 +12,7 @@ function getSessionId(): string {
 
 export default function App() {
   const [items, setItems] = useState<Item[]>([])
-  const [userVotes, setUserVotes] = useState<Set<number>>(new Set())
+  const [userVotes, setUserVotes] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const sessionId = getSessionId()
 
@@ -65,11 +65,11 @@ export default function App() {
     if (error) {
       console.error('Error fetching user votes:', error)
     } else {
-      setUserVotes(new Set(data?.map((like: { item_id: number }) => like.item_id) || []))
+      setUserVotes(new Set(data?.map((like: { item_id: string }) => like.item_id) || []))
     }
   }
 
-  async function toggleVote(itemId: number) {
+  async function toggleVote(itemId: string) {
     const hasVoted = userVotes.has(itemId)
 
     if (hasVoted) {
@@ -160,7 +160,7 @@ export default function App() {
                 <div className="flex items-start justify-between gap-6">
                   <div className="flex-1">
                     <p className="text-card-foreground text-base leading-relaxed">
-                      {item.text || item.content || `Item ${item.id}`}
+                      {item.label}
                     </p>
                   </div>
                   <div className="flex flex-col items-center gap-1 min-w-[70px]">

@@ -10,14 +10,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 export interface Item {
-  id: number
-  text?: string
-  content?: string
+  id: string
+  label: string
+  description?: string
   likes_count: number
 }
 
 export interface Like {
   id?: number
-  item_id: number
+  item_id: string
   session_id: string
 }
