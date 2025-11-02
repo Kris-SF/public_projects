@@ -16,17 +16,43 @@ export default function App() {
   }, [])
 
   async function fetchItems() {
-    const { data, error } = await supabase
+    // Fetch items
+    const { data: itemsData, error: itemsError } = await supabase
       .from('items')
       .select('*')
       .order('id', { ascending: true })
 
-    if (error) {
-      console.error('Error fetching items:', error)
-    } else {
-      console.log('Fetched items:', data)
-      setItems(data || [])
+    if (itemsError) {
+      console.error('Error fetching items:', itemsError)
+      setLoading(false)
+      return
     }
+
+    // Fetch all likes and count them per item
+    const { data: likesData, error: likesError } = await supabase
+      .from('likes')
+      .select('item_id')
+
+    if (likesError) {
+      console.error('Error fetching likes:', likesError)
+      setLoading(false)
+      return
+    }
+
+    // Count votes per item
+    const voteCounts = new Map<string, number>()
+    likesData?.forEach(like => {
+      voteCounts.set(like.item_id, (voteCounts.get(like.item_id) || 0) + 1)
+    })
+
+    // Merge vote counts with items
+    const itemsWithCounts = (itemsData || []).map(item => ({
+      ...item,
+      likes_count: voteCounts.get(item.id) || 0
+    }))
+
+    console.log('Items with vote counts:', itemsWithCounts)
+    setItems(itemsWithCounts)
     setLoading(false)
   }
 
