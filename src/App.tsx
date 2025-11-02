@@ -1,44 +1,18 @@
 import { useEffect, useState } from 'react'
 import { supabase, type Item } from './lib/supabase'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
-function getSessionId(): string {
-  let sessionId = localStorage.getItem('voting_session_id')
-  if (!sessionId) {
-    sessionId = crypto.randomUUID()
-    localStorage.setItem('voting_session_id', sessionId)
-  }
-  return sessionId
-}
+type ViewMode = 'voting' | 'results'
 
 export default function App() {
   const [items, setItems] = useState<Item[]>([])
   const [userVotes, setUserVotes] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
-  const sessionId = getSessionId()
+  const [viewMode, setViewMode] = useState<ViewMode>('voting')
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     fetchItems()
-    fetchUserVotes()
-
-    // Subscribe to real-time updates
-    const channel = supabase
-      .channel('items-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'items'
-        },
-        () => {
-          fetchItems()
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
   }, [])
 
   async function fetchItems() {
@@ -56,73 +30,53 @@ export default function App() {
     setLoading(false)
   }
 
-  async function fetchUserVotes() {
-    const { data, error } = await supabase
-      .from('likes')
-      .select('item_id')
-      .eq('session_id', sessionId)
-
-    if (error) {
-      console.error('Error fetching user votes:', error)
-    } else {
-      setUserVotes(new Set(data?.map((like: { item_id: string }) => like.item_id) || []))
-    }
+  function toggleVote(itemId: string) {
+    setUserVotes(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId)
+      } else {
+        newSet.add(itemId)
+      }
+      return newSet
+    })
   }
 
-  async function toggleVote(itemId: string) {
-    const hasVoted = userVotes.has(itemId)
-
-    if (hasVoted) {
-      // Remove vote
-      const { error } = await supabase
-        .from('likes')
-        .delete()
-        .eq('item_id', itemId)
-        .eq('session_id', sessionId)
-
-      if (error) {
-        console.error('Error removing vote:', error)
-        return
-      }
-
-      // Update local state
-      setUserVotes(prev => {
-        const newSet = new Set(prev)
-        newSet.delete(itemId)
-        return newSet
-      })
-
-      // Optimistically update likes count
-      setItems(prev =>
-        prev.map(item =>
-          item.id === itemId
-            ? { ...item, likes_count: item.likes_count - 1 }
-            : item
-        )
-      )
-    } else {
-      // Add vote
-      const { error } = await supabase
-        .from('likes')
-        .insert({ item_id: itemId, session_id: sessionId })
-
-      if (error) {
-        console.error('Error adding vote:', error)
-        return
-      }
-
-      // Update local state
-      setUserVotes(prev => new Set(prev).add(itemId))
-
-      // Optimistically update likes count
-      setItems(prev =>
-        prev.map(item =>
-          item.id === itemId
-            ? { ...item, likes_count: item.likes_count + 1 }
-            : item
-        )
-      )
+  async function submitVotes() {
+    if (userVotes.size === 0) {
+      alert('Please select at least one item to vote for!')
+      return
     }
+
+    setSubmitting(true)
+    const sessionId = crypto.randomUUID()
+
+    // Insert all votes into the database
+    const votesToInsert = Array.from(userVotes).map(itemId => ({
+      item_id: itemId,
+      session_id: sessionId
+    }))
+
+    const { error } = await supabase
+      .from('likes')
+      .insert(votesToInsert)
+
+    if (error) {
+      console.error('Error submitting votes:', error)
+      alert('Error submitting votes. Please try again.')
+      setSubmitting(false)
+      return
+    }
+
+    // Refresh items to get updated counts
+    await fetchItems()
+    setSubmitting(false)
+    setViewMode('results')
+  }
+
+  function resetVoting() {
+    setUserVotes(new Set())
+    setViewMode('voting')
   }
 
   if (loading) {
@@ -133,6 +87,102 @@ export default function App() {
     )
   }
 
+  if (viewMode === 'results') {
+    // Prepare chart data - sort by votes descending
+    const chartData = items
+      .map((item, index) => ({
+        number: index + 1,
+        name: `#${index + 1}`,
+        votes: item.likes_count,
+        label: item.label
+      }))
+      .sort((a, b) => b.votes - a.votes)
+
+    return (
+      <div className="min-h-screen bg-background py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="text-center mb-12">
+            <h1 className="text-5xl font-bold text-foreground mb-4 font-space-grotesk">
+              Results: 50 Things Sasha Knows
+            </h1>
+            <p className="text-foreground/80 text-lg max-w-2xl mx-auto leading-relaxed mb-6">
+              Here's how everyone voted across all {items.reduce((sum, item) => sum + item.likes_count, 0)} total votes
+            </p>
+          </div>
+
+          {/* Chart */}
+          <div className="bg-card border-2 border-border rounded-xl p-8 mb-8">
+            <h2 className="text-2xl font-bold text-foreground mb-6 font-space-grotesk">
+              Vote Distribution
+            </h2>
+            <ResponsiveContainer width="100%" height={600}>
+              <BarChart data={chartData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#CFCFCF" opacity={0.3} />
+                <XAxis type="number" stroke="#182B40" style={{ fontSize: 12, fontFamily: 'JetBrains Mono' }} />
+                <YAxis
+                  dataKey="name"
+                  type="category"
+                  stroke="#182B40"
+                  style={{ fontSize: 12, fontFamily: 'JetBrains Mono' }}
+                  width={50}
+                />
+                <Tooltip
+                  content={({ active, payload }) => {
+                    if (active && payload && payload[0]) {
+                      const data = payload[0].payload
+                      return (
+                        <div className="bg-card border-2 border-primary p-4 rounded-lg shadow-lg max-w-md">
+                          <p className="font-semibold text-foreground mb-2">Item #{data.number}</p>
+                          <p className="text-foreground/80 text-sm mb-2">{data.label}</p>
+                          <p className="text-primary font-bold">{data.votes} votes</p>
+                        </div>
+                      )
+                    }
+                    return null
+                  }}
+                />
+                <Bar dataKey="votes" fill="#00C4E7" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Detailed List */}
+          <div className="bg-card border-2 border-border rounded-xl p-8 mb-8">
+            <h2 className="text-2xl font-bold text-foreground mb-6 font-space-grotesk">
+              All Items (Ranked by Votes)
+            </h2>
+            <div className="space-y-3">
+              {chartData.map((item, index) => (
+                <div
+                  key={item.number}
+                  className="flex items-start gap-4 p-4 bg-background/50 rounded-lg"
+                >
+                  <div className="flex items-center gap-3 min-w-[100px]">
+                    <span className="text-foreground/60 font-jetbrains text-sm">#{item.number}</span>
+                    <span className="text-primary font-bold font-jetbrains">{item.votes}</span>
+                  </div>
+                  <p className="text-foreground/80 text-sm flex-1">{item.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Vote Again Button */}
+          <div className="text-center">
+            <button
+              onClick={resetVoting}
+              className="bg-primary text-foreground px-8 py-4 rounded-lg font-semibold font-space-grotesk text-lg hover:opacity-90 transition-opacity"
+            >
+              Vote Again
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Voting mode
   return (
     <div className="min-h-screen bg-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto">
@@ -154,13 +204,13 @@ export default function App() {
             . Vote for the things you find most resonant.
           </p>
           <p className="text-foreground/60 text-base max-w-2xl mx-auto">
-            Click the moon to toggle your vote — you can vote for as many as you want!
+            Click the moon to select items — you can vote for as many as you want!
           </p>
         </div>
 
         {/* Items List */}
-        <div className="space-y-3">
-          {items.map((item) => {
+        <div className="space-y-3 mb-8">
+          {items.map((item, index) => {
             const hasVoted = userVotes.has(item.id)
             return (
               <div
@@ -169,7 +219,10 @@ export default function App() {
                 className="bg-card border-2 border-border rounded-xl p-6 cursor-pointer transition-all duration-200 hover:border-primary hover:shadow-lg group"
               >
                 <div className="flex items-start justify-between gap-6">
-                  <div className="flex-1">
+                  <div className="flex gap-4 flex-1">
+                    <span className="text-foreground/40 font-jetbrains text-sm min-w-[30px]">
+                      {index + 1}.
+                    </span>
                     <p className="text-card-foreground text-base leading-relaxed">
                       {item.label}
                     </p>
@@ -184,9 +237,6 @@ export default function App() {
                     >
                       {hasVoted ? '🌕' : '🌑'}
                     </button>
-                    <span className="text-foreground/60 font-semibold text-sm font-jetbrains">
-                      {item.likes_count}
-                    </span>
                   </div>
                 </div>
               </div>
@@ -194,11 +244,20 @@ export default function App() {
           })}
         </div>
 
-        {/* Footer */}
-        <div className="mt-12 text-center">
-          <p className="text-foreground/60 text-sm font-jetbrains">
-            You've voted for {userVotes.size} item{userVotes.size !== 1 ? 's' : ''}
-          </p>
+        {/* Vote Counter and Submit */}
+        <div className="sticky bottom-0 bg-background/95 backdrop-blur-sm border-t-2 border-border py-6 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+          <div className="max-w-4xl mx-auto flex items-center justify-between">
+            <p className="text-foreground/60 text-sm font-jetbrains">
+              You've selected {userVotes.size} item{userVotes.size !== 1 ? 's' : ''}
+            </p>
+            <button
+              onClick={submitVotes}
+              disabled={submitting || userVotes.size === 0}
+              className="bg-primary text-foreground px-8 py-3 rounded-lg font-semibold font-space-grotesk hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {submitting ? 'Submitting...' : 'Submit My Votes'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
