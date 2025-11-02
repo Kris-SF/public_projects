@@ -11,7 +11,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 export interface Item {
   id: number
-  text: string
+  text?: string
+  content?: string
   likes_count: number
 }
 

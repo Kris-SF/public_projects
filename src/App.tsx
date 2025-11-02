@@ -50,6 +50,7 @@ export default function App() {
     if (error) {
       console.error('Error fetching items:', error)
     } else {
+      console.log('Fetched items:', data)
       setItems(data || [])
     }
     setLoading(false)
@@ -159,7 +160,7 @@ export default function App() {
                 <div className="flex items-start justify-between gap-6">
                   <div className="flex-1">
                     <p className="text-card-foreground text-base leading-relaxed">
-                      {item.text}
+                      {item.text || item.content || `Item ${item.id}`}
                     </p>
                   </div>
                   <div className="flex flex-col items-center gap-1 min-w-[70px]">
@@ -170,7 +171,7 @@ export default function App() {
                         toggleVote(item.id)
                       }}
                     >
-                      {hasVoted ? '💜' : '🤍'}
+                      {hasVoted ? '🌕' : '🌑'}
                     </button>
                     <span className="text-foreground/60 font-semibold text-sm font-jetbrains">
                       {item.likes_count}
