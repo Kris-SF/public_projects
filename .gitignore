@@ -14,7 +14,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# lib/ - commented out to allow src/lib in JS projects
 lib64/
 parts/
 sdist/

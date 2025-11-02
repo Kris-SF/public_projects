@@ -64,7 +64,7 @@ export default function App() {
     if (error) {
       console.error('Error fetching user votes:', error)
     } else {
-      setUserVotes(new Set(data?.map(like => like.item_id) || []))
+      setUserVotes(new Set(data?.map((like: { item_id: number }) => like.item_id) || []))
     }
   }
 
