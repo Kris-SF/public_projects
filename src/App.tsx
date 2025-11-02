@@ -132,15 +132,16 @@ export default function App() {
   }
 
   if (viewMode === 'results') {
-    // Prepare chart data - sort by votes descending
-    const chartData = items
-      .map((item, index) => ({
-        number: index + 1,
-        name: `#${index + 1}`,
-        votes: item.likes_count,
-        label: item.label
-      }))
-      .sort((a, b) => b.votes - a.votes)
+    // Prepare chart data - keep in original order (1-50)
+    const chartData = items.map((item, index) => ({
+      number: index + 1,
+      name: `${index + 1}`,
+      votes: item.likes_count,
+      label: item.label
+    }))
+
+    // For the ranked list below chart
+    const rankedData = [...chartData].sort((a, b) => b.votes - a.votes)
 
     return (
       <div className="min-h-screen bg-background py-12 px-4 sm:px-6 lg:px-8">
@@ -160,16 +161,19 @@ export default function App() {
             <h2 className="text-2xl font-bold text-foreground mb-6 font-space-grotesk">
               Vote Distribution
             </h2>
-            <ResponsiveContainer width="100%" height={600}>
-              <BarChart data={chartData} layout="vertical">
+            <ResponsiveContainer width="100%" height={500}>
+              <BarChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#CFCFCF" opacity={0.3} />
-                <XAxis type="number" stroke="#182B40" style={{ fontSize: 12, fontFamily: 'JetBrains Mono' }} />
-                <YAxis
+                <XAxis
                   dataKey="name"
-                  type="category"
+                  stroke="#182B40"
+                  style={{ fontSize: 10, fontFamily: 'JetBrains Mono' }}
+                  label={{ value: 'Item Number', position: 'insideBottom', offset: -5 }}
+                />
+                <YAxis
                   stroke="#182B40"
                   style={{ fontSize: 12, fontFamily: 'JetBrains Mono' }}
-                  width={50}
+                  label={{ value: 'Votes', angle: -90, position: 'insideLeft' }}
                 />
                 <Tooltip
                   content={({ active, payload }) => {
@@ -197,7 +201,7 @@ export default function App() {
               All Items (Ranked by Votes)
             </h2>
             <div className="space-y-3">
-              {chartData.map((item, index) => (
+              {rankedData.map((item, index) => (
                 <div
                   key={item.number}
                   className="flex items-start gap-4 p-4 bg-background/50 rounded-lg"
