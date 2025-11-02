@@ -126,51 +126,53 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400">
-        <div className="text-white text-2xl font-semibold">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-2xl font-semibold font-space-grotesk text-foreground">Loading...</div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto">
+        {/* Header */}
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-white mb-4">
+          <h1 className="text-5xl font-bold text-foreground mb-4 font-space-grotesk">
             50 Things I Know
           </h1>
-          <p className="text-white text-lg max-w-2xl mx-auto">
+          <p className="text-foreground/80 text-lg max-w-2xl mx-auto leading-relaxed">
             Vote for the things you find resonant. You can vote for as many items as you want.
             Click the heart to toggle your vote!
           </p>
         </div>
 
-        <div className="space-y-4">
+        {/* Items List */}
+        <div className="space-y-3">
           {items.map((item) => {
             const hasVoted = userVotes.has(item.id)
             return (
               <div
                 key={item.id}
                 onClick={() => toggleVote(item.id)}
-                className="bg-white rounded-lg shadow-lg p-6 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:shadow-xl"
+                className="bg-card border-2 border-border rounded-xl p-6 cursor-pointer transition-all duration-200 hover:border-primary hover:shadow-lg group"
               >
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start justify-between gap-6">
                   <div className="flex-1">
-                    <p className="text-gray-800 text-lg leading-relaxed">
+                    <p className="text-card-foreground text-base leading-relaxed">
                       {item.text}
                     </p>
                   </div>
-                  <div className="flex flex-col items-center gap-2 min-w-[60px]">
+                  <div className="flex flex-col items-center gap-1 min-w-[70px]">
                     <button
-                      className="text-3xl transition-transform duration-200 hover:scale-110"
+                      className="text-4xl transition-all duration-200 group-hover:scale-110"
                       onClick={(e) => {
                         e.stopPropagation()
                         toggleVote(item.id)
                       }}
                     >
-                      {hasVoted ? '❤️' : '🤍'}
+                      {hasVoted ? '💜' : '🤍'}
                     </button>
-                    <span className="text-gray-600 font-semibold text-sm">
+                    <span className="text-foreground/60 font-semibold text-sm font-jetbrains">
                       {item.likes_count}
                     </span>
                   </div>
@@ -180,8 +182,9 @@ export default function App() {
           })}
         </div>
 
+        {/* Footer */}
         <div className="mt-12 text-center">
-          <p className="text-white text-sm">
+          <p className="text-foreground/60 text-sm font-jetbrains">
             You've voted for {userVotes.size} item{userVotes.size !== 1 ? 's' : ''}
           </p>
         </div>
