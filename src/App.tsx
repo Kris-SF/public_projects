@@ -174,6 +174,7 @@ export default function App() {
                   stroke="#182B40"
                   style={{ fontSize: 12, fontFamily: 'JetBrains Mono' }}
                   label={{ value: 'Votes', angle: -90, position: 'insideLeft' }}
+                  allowDecimals={false}
                 />
                 <Tooltip
                   content={({ active, payload }) => {
