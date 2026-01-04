@@ -805,6 +805,7 @@
                 medianCost: median(costs),
                 meanCost: mean(costs),
                 medianSuccessCost: success_costs.length > 0 ? median(success_costs) : 0,
+                meanSuccessCost: success_costs.length > 0 ? mean(success_costs) : 0,
                 costs: costs,
                 success_costs: success_costs,
                 allResults: results
@@ -841,13 +842,13 @@
                     <div class="stat-subtext">${stats.probSuccess >= 0.5 ? '✓ Coin flip or better' : '✗ Long shot'}</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Median Cost (All)</div>
-                    <div class="stat-value">$${Math.round(stats.medianCost).toLocaleString()}</div>
+                    <div class="stat-label">Mean Cost (All)</div>
+                    <div class="stat-value">$${Math.round(stats.meanCost).toLocaleString()}</div>
                     <div class="stat-subtext">Including failed attempts</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Median Cost (Success)</div>
-                    <div class="stat-value">$${Math.round(stats.medianSuccessCost).toLocaleString()}</div>
+                    <div class="stat-label">Mean Cost (Success)</div>
+                    <div class="stat-value">$${Math.round(stats.meanSuccessCost).toLocaleString()}</div>
                     <div class="stat-subtext">If you succeed</div>
                 </div>
             `;
@@ -860,8 +861,8 @@
                 interpretClass = 'success';
                 interpretText = `
                     <h4>✅ Status: Reasonable Odds</h4>
-                    <p>With SR=${sr.toFixed(2)} and ${(vol*100).toFixed(0)}% volatility, you have a ${(stats.probSuccess*100).toFixed(1)}% chance using Rob's exact simulation. 
-                    Expected cost if you succeed: $${Math.round(stats.medianSuccessCost).toLocaleString()}. This matches Rob's published findings.</p>
+                    <p>With SR=${sr.toFixed(2)} and ${(vol*100).toFixed(0)}% volatility, you have a ${(stats.probSuccess*100).toFixed(1)}% chance using Rob's exact simulation.
+                    Expected cost if you succeed: $${Math.round(stats.meanSuccessCost).toLocaleString()}. This matches Rob's published findings.</p>
                 `;
             } else if (stats.probSuccess >= 0.25) {
                 interpretClass = 'warning';
