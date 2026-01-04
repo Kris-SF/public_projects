@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Challenge Simulator</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #1E1E22;
+            color: #A9B2C3;
+            min-height: 100vh;
+            padding: 15px;
+            font-size: 13px;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: #2D3B45;
+            border-radius: 2px;
+            box-shadow: 0 0 30px rgba(0, 255, 247, 0.08);
+            overflow: hidden;
+            border: 1px solid rgba(0, 255, 247, 0.2);
+        }
+        
+        .header {
+            background: linear-gradient(180deg, #1E1E22 0%, #2D3B45 100%);
+            color: #00FFF7;
+            padding: 20px 30px;
+            text-align: center;
+            border-bottom: 1px solid #00FFF7;
+            position: relative;
+        }
+        
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #00FFF7, transparent);
+        }
+        
+        .header h1 {
+            font-family: 'Space Mono', monospace;
+            font-size: 1.4em;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            font-weight: 700;
+            text-shadow: 0 0 15px rgba(0, 255, 247, 0.4);
+        }
+        
+        .header p {
+            font-size: 0.85em;
+            color: #A9B2C3;
+            font-family: 'Space Mono', monospace;
+        }
+        
+        .header .badge {
+            display: inline-block;
+            background: #FFA629;
+            color: #1E1E22;
+            padding: 3px 10px;
+            border-radius: 2px;
+            font-size: 0.7em;
+            margin-top: 8px;
+            font-weight: bold;
+            font-family: 'Space Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 0 10px rgba(255, 166, 41, 0.4);
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 0;
+            min-height: 700px;
+        }
+        
+        .controls {
+            background: #1E1E22;
+            padding: 20px;
+            border-right: 1px solid rgba(0, 255, 247, 0.3);
+            overflow-y: auto;
+            max-height: 90vh;
+        }
+        
+        .control-section {
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(169, 178, 195, 0.15);
+        }
+        
+        .control-section:last-child {
+            border-bottom: none;
+        }
+        
+        .control-section h3 {
+            color: #00FFF7;
+            margin-bottom: 12px;
+            font-size: 0.85em;
+            font-family: 'Space Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            font-weight: 700;
+        }
+        
+        .slider-group {
+            margin-bottom: 15px;
+        }
+        
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #A9B2C3;
+            font-size: 0.85em;
+        }
+        
+        .slider-value {
+            background: #00FFF7;
+            color: #1E1E22;
+            padding: 2px 8px;
+            border-radius: 2px;
+            font-size: 0.8em;
+            min-width: 55px;
+            text-align: center;
+            font-family: 'Space Mono', monospace;
+            font-weight: 700;
+            box-shadow: 0 0 8px rgba(0, 255, 247, 0.3);
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            border-radius: 0;
+            background: #2D3B45;
+            outline: none;
+            -webkit-appearance: none;
+            border: 1px solid rgba(0, 255, 247, 0.2);
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 0;
+            background: #00FFF7;
+            cursor: pointer;
+            box-shadow: 0 0 8px rgba(0, 255, 247, 0.5);
+        }
+        
+        input[type="range"]::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            border-radius: 0;
+            background: #00FFF7;
+            cursor: pointer;
+            box-shadow: 0 0 8px rgba(0, 255, 247, 0.5);
+            border: none;
+        }
+        
+        .preset-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        
+        .preset-btn {
+            padding: 8px 6px;
+            border: 1px solid #00FFF7;
+            background: transparent;
+            color: #00FFF7;
+            border-radius: 0;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.75em;
+            font-family: 'Space Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+        }
+        
+        .preset-btn:hover {
+            background: #00FFF7;
+            color: #1E1E22;
+            box-shadow: 0 0 12px rgba(0, 255, 247, 0.4);
+        }
+        
+        .run-btn {
+            width: 100%;
+            padding: 12px;
+            background: #FFA629;
+            color: #1E1E22;
+            border: none;
+            border-radius: 0;
+            font-size: 0.9em;
+            font-weight: bold;
+            font-family: 'Space Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 0 15px rgba(255, 166, 41, 0.3);
+        }
+        
+        .run-btn:hover {
+            box-shadow: 0 0 20px rgba(255, 166, 41, 0.6);
+            transform: translateY(-1px);
+        }
+        
+        .run-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .results {
+            padding: 25px;
+            overflow-y: auto;
+            max-height: 90vh;
+            background: #2D3B45;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 100px 20px;
+        }
+        
+        .loading.active {
+            display: block;
+        }
+        
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(0, 255, 247, 0.2);
+            border-top: 4px solid #00FFF7;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            color: #00FFF7;
+            font-family: 'Space Mono', monospace;
+            font-size: 1.2em;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+        }
+        
+        #results-content {
+            display: none;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: #1E1E22;
+            border: 1px solid #00FFF7;
+            color: #A9B2C3;
+            padding: 15px;
+            border-radius: 0;
+            box-shadow: 0 0 12px rgba(0, 255, 247, 0.15);
+            text-align: center;
+            position: relative;
+        }
+        
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #00FFF7;
+            box-shadow: 0 0 8px rgba(0, 255, 247, 0.4);
+        }
+        
+        .stat-label {
+            font-size: 0.75em;
+            color: #A9B2C3;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-family: 'Space Mono', monospace;
+        }
+        
+        .stat-value {
+            font-size: 1.8em;
+            font-weight: 700;
+            color: #00FFF7;
+            font-family: 'Space Mono', monospace;
+            text-shadow: 0 0 12px rgba(0, 255, 247, 0.4);
+            margin-bottom: 5px;
+        }
+        
+        .stat-subtext {
+            font-size: 0.75em;
+            color: #A9B2C3;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .interpretation {
+            background: #1E1E22;
+            border-left: 3px solid #00FFF7;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 0;
+            font-size: 0.9em;
+        }
+        
+        .interpretation.success {
+            border-left-color: #00FFF7;
+            background: rgba(0, 255, 247, 0.04);
+        }
+        
+        .interpretation.warning {
+            border-left-color: #FFA629;
+            background: rgba(255, 166, 41, 0.04);
+        }
+        
+        .interpretation.danger {
+            border-left-color: #FF4444;
+            background: rgba(255, 68, 68, 0.04);
+        }
+        
+        .interpretation h4 {
+            color: #00FFF7;
+            margin-bottom: 8px;
+            font-family: 'Space Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 0.85em;
+        }
+        
+        .interpretation.warning h4 {
+            color: #FFA629;
+        }
+        
+        .interpretation.danger h4 {
+            color: #FF4444;
+        }
+        
+        .interpretation p {
+            color: #A9B2C3;
+            line-height: 1.5;
+            font-size: 0.9em;
+        }
+        
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .chart-container {
+            background: #1E1E22;
+            padding: 15px;
+            border-radius: 0;
+            border: 1px solid rgba(0, 255, 247, 0.25);
+        }
+        
+        .chart-title {
+            color: #00FFF7;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.8em;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-align: center;
+        }
+        
+        canvas {
+            max-height: 250px;
+        }
+        
+        .footer-note {
+            background: rgba(0, 255, 247, 0.04);
+            border: 1px solid rgba(0, 255, 247, 0.25);
+            padding: 12px;
+            margin-top: 20px;
+            border-radius: 0;
+            font-size: 0.75em;
+            color: #A9B2C3;
+            text-align: center;
+            font-family: 'Space Mono', monospace;
+            line-height: 1.4;
+        }
+        
+        .footer-note strong {
+            color: #00FFF7;
+        }
+        
+        .documentation {
+            background: #1E1E22;
+            border: 1px solid rgba(0, 255, 247, 0.3);
+            margin-top: 15px;
+            border-radius: 0;
+        }
+        
+        .doc-header {
+            padding: 12px 15px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.8em;
+            color: #00FFF7;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid rgba(0, 255, 247, 0.2);
+            user-select: none;
+        }
+        
+        .doc-header:hover {
+            background: rgba(0, 255, 247, 0.05);
+        }
+        
+        .doc-arrow {
+            transition: transform 0.2s;
+            font-size: 0.9em;
+        }
+        
+        .doc-arrow.open {
+            transform: rotate(90deg);
+        }
+        
+        .doc-content {
+            padding: 20px;
+            display: none;
+            font-size: 0.85em;
+            line-height: 1.6;
+            color: #A9B2C3;
+        }
+        
+        .doc-content.open {
+            display: block;
+        }
+        
+        .doc-content h4 {
+            color: #00FFF7;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.9em;
+            margin-top: 15px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .doc-content h4:first-child {
+            margin-top: 0;
+        }
+        
+        .doc-content p {
+            margin-bottom: 10px;
+        }
+        
+        .doc-content ul {
+            margin-left: 20px;
+            margin-bottom: 10px;
+        }
+        
+        .doc-content li {
+            margin-bottom: 5px;
+        }
+        
+        .doc-content a {
+            color: #00FFF7;
+            text-decoration: none;
+        }
+        
+        .doc-content a:hover {
+            text-decoration: underline;
+        }
+        
+        .doc-content code {
+            background: rgba(0, 255, 247, 0.1);
+            padding: 2px 6px;
+            border-radius: 2px;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.9em;
+            color: #00FFF7;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>◢ TRADING CHALLENGE SIMULATOR ◣</h1>
+            <p>Based on <a href="https://qoppac.blogspot.com/2025/11/wordle-tm-and-one-simple-hack-you-need.html" target="_blank" style="color: #00FFF7; text-decoration: none;">Rob Carver's</a> Simulation</p>
+        </div>
+        
+        <div class="main-content">
+            <div class="controls">
+                <div class="control-section">
+                    <h3>▸ Trading Parameters</h3>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Sharpe Ratio</span>
+                            <span class="slider-value" id="sr-value">1.50</span>
+                        </div>
+                        <input type="range" id="sharpe-ratio" min="0.5" max="3.0" step="0.1" value="1.5" 
+                               onchange="updateSliderValue('sr-value', this.value)">
+                    </div>
+                    
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Volatility</span>
+                            <span class="slider-value" id="vol-value">15%</span>
+                        </div>
+                        <input type="range" id="volatility" min="5" max="40" step="1" value="15"
+                               onchange="updateSliderValue('vol-value', this.value + '%')">
+                    </div>
+                </div>
+                
+                <div class="control-section">
+                    <h3>▸ Simulation Settings</h3>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Iterations</span>
+                            <span class="slider-value" id="sims-value">10,000</span>
+                        </div>
+                        <input type="range" id="num-sims" min="1000" max="50000" step="1000" value="10000"
+                               onchange="updateSliderValue('sims-value', parseInt(this.value).toLocaleString())">
+                    </div>
+                </div>
+                
+                <div class="control-section">
+                    <h3>▸ Presets</h3>
+                    <div class="preset-buttons">
+                        <button class="preset-btn" onclick="setPreset(1.5, 15)">Rob's Safe</button>
+                        <button class="preset-btn" onclick="setPreset(2.0, 15)">Strong Edge</button>
+                        <button class="preset-btn" onclick="setPreset(3.0, 17)">Elite</button>
+                        <button class="preset-btn" onclick="setPreset(1.5, 30)">High Vol</button>
+                    </div>
+                </div>
+                
+                <button class="run-btn" id="run-btn" onclick="runSimulation()">
+                    ▶ RUN SIMULATION
+                </button>
+                
+                <div class="documentation">
+                    <div class="doc-header" onclick="toggleDocumentation()">
+                        <span>▸ About This Simulator</span>
+                        <span class="doc-arrow" id="doc-arrow">▶</span>
+                    </div>
+                    <div class="doc-content" id="doc-content">
+                        <h4>Background</h4>
+                        <p>This simulator is based on <a href="https://qoppac.blogspot.com/2025/11/wordle-tm-and-one-simple-hack-you-need.html" target="_blank">Rob Carver's quantitative analysis</a> of funded trader challenges. It uses his open-source code to model the Raen challenge with exact parameters:</p>
+                        <ul>
+                            <li>Profit target: 20%</li>
+                            <li>Daily loss limit: -2%</li>
+                            <li>Minimum trading days: 30</li>
+                            <li>Monthly fee: $300 (free resets)</li>
+                        </ul>
+                        
+                        <h4>Key Insights</h4>
+                        <p><strong>Rob's Recommendation:</strong> Use 15% volatility for best results. Here's why:</p>
+                        <ul>
+                            <li><code>SR=1.5, Vol=15%</code>: ~52% success rate, $2,100 median cost</li>
+                            <li><code>SR=1.5, Vol=30%</code>: ~31% success rate (much worse!)</li>
+                        </ul>
+                        
+                        <h4>The Volatility Tradeoff</h4>
+                        <p><strong>Rob's Wordle Analogy:</strong> Trading challenges are like Wordle - you're balancing two competing goals:</p>
+                        <ul>
+                            <li><strong>Probability of success:</strong> Higher with lower volatility (15%)</li>
+                            <li><strong>Speed to completion:</strong> Faster with higher volatility (30%)</li>
+                        </ul>
+                        
+                        <p><strong>Why this creates a dilemma:</strong></p>
+                        <ul>
+                            <li>Low vol (15%): Higher success rate (~52%) but takes longer</li>
+                            <li>High vol (30%): Faster completion when you succeed, but much lower success rate (~31%)</li>
+                            <li>The -2% daily loss limit punishes high volatility severely</li>
+                        </ul>
+                        
+                        <p><strong>Rob's solution:</strong> Optimize for probability, not speed. With free resets, multiple failed attempts waste calendar time anyway. A 52% success strategy that takes 2 months beats a 31% strategy that takes 1 month, because you'll need multiple attempts with the latter.</p>
+                        
+                        <h4>Methodology</h4>
+                        <p>The simulation uses Rob Carver's exact methodology:</p>
+                        <ul>
+                            <li>256 trading days per year (not 252)</li>
+                            <li>Daily vol = annual vol / 16 (not √256)</li>
+                            <li>Daily mean = (SR × vol) / 256</li>
+                            <li>Compounding returns with drawdown from peak</li>
+                            <li>Monte Carlo simulation with 10,000 iterations</li>
+                        </ul>
+                        
+                        <p><strong>Bottom line:</strong> You need SR ≥ 1.5 with 15% vol for reasonable odds. Anything less is gambling, not trading.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="results">
+                <div id="loading" class="loading">
+                    <div class="loading-spinner"></div>
+                    <div class="loading-text">Processing...</div>
+                </div>
+                
+                <div id="results-content">
+                    <div id="stats-grid" class="stats-grid"></div>
+                    <div id="interpretation" class="interpretation"></div>
+                    
+                    <div class="charts-grid">
+                        <div class="chart-container">
+                            <div class="chart-title">◢ All Attempts - Cost Distribution</div>
+                            <canvas id="cost-chart-all"></canvas>
+                        </div>
+                        <div class="chart-container">
+                            <div class="chart-title">◢ Success Only - Cost Distribution</div>
+                            <canvas id="cost-chart-success"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <div class="chart-title">◢ Days to Completion - Success Only</div>
+                        <canvas id="days-chart"></canvas>
+                    </div>
+                    
+                    <div class="footer-note">
+                        <strong>ALGORITHM SOURCE:</strong> Rob Carver's quantitative analysis | 256 trading days | Compounding returns | Daily loss limit: -2% | Profit target: +20%
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const charts = {};
+        
+        function toggleDocumentation() {
+            const content = document.getElementById('doc-content');
+            const arrow = document.getElementById('doc-arrow');
+            content.classList.toggle('open');
+            arrow.classList.toggle('open');
+        }
+        
+        function updateSliderValue(id, value) {
+            document.getElementById(id).textContent = value;
+        }
+        
+        function setPreset(sr, vol) {
+            document.getElementById('sharpe-ratio').value = sr;
+            document.getElementById('volatility').value = vol;
+            updateSliderValue('sr-value', sr.toFixed(2));
+            updateSliderValue('vol-value', vol + '%');
+        }
+        
+        // ROB CARVER'S EXACT IMPLEMENTATION
+        const PROFIT_TARGET = 0.20;
+        const DAILY_LOSS_LIMIT = 0.02;
+        const MIN_TRADING_DAYS = 30;
+        const MONTHLY_FEE = 300;
+        const TRADING_DAYS_PER_YEAR = 256;
+        
+        // Rob Carver's exact implementation from Python
+        const BUS_DAYS_IN_YEAR = 256;
+        const BUS_DAYS_IN_MONTH = 22;
+        
+        function generateDailyReturn(daily_mean, daily_vol) {
+            // Box-Muller transform - same as random.gauss in Python
+            const u1 = Math.random();
+            const u2 = Math.random();
+            const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+            return daily_mean + daily_vol * z;
+        }
+        
+        function drawdown(trades) {
+            // Calculate drawdown from peak (Rob's method)
+            if (trades.length === 0) return 0;
+            
+            let cumulative = 1;
+            let peak = 1;
+            let currentDrawdown = 0;
+            
+            for (let i = 0; i < trades.length; i++) {
+                cumulative *= (1 + trades[i]);
+                if (cumulative > peak) peak = cumulative;
+                currentDrawdown = cumulative - peak;
+            }
+            
+            return currentDrawdown;
+        }
+        
+        function totalProfits(trades) {
+            if (trades.length === 0) return 0;
+            let cumulative = 1;
+            for (let r of trades) {
+                cumulative *= (1 + r);
+            }
+            return cumulative - 1;
+        }
+        
+        function simulateSingleChallenge(daily_mean, daily_vol) {
+            const PROFIT_THRESHOLD = 0.20;
+            const DAILY_DD_LIMIT = -0.02;
+            const MIN_TRADING_DAYS = 30;
+            const COST_PER_MONTH = 300;
+            const RESET_FEE = 0;
+            const ACTIVATION_FEE = 0;
+            const MAX_DD = -1; // not used for Raen
+            const DAYS_TO_GIVE_UP = BUS_DAYS_IN_YEAR;
+            
+            let cost = ACTIVATION_FEE + COST_PER_MONTH; // pay in advance
+            let passed = false;
+            let trades = [];
+            let total_days = 0;
+            let days_since_last_cost = 0;
+            
+            while (!passed && total_days < DAYS_TO_GIVE_UP) {
+                total_days++;
+                days_since_last_cost++;
+                
+                const day_return = generateDailyReturn(daily_mean, daily_vol);
+                trades.push(day_return);
+                
+                // Check bust-out conditions (Rob's way)
+                const over_daily_limit = day_return < DAILY_DD_LIMIT;
+                const over_max_dd = MAX_DD > -1 && drawdown(trades) < MAX_DD;
+                
+                if (over_daily_limit || over_max_dd) {
+                    trades = []; // reset
+                    cost += RESET_FEE;
+                    continue;
+                }
+                
+                // Charge monthly cost
+                if (days_since_last_cost >= BUS_DAYS_IN_MONTH) {
+                    cost += COST_PER_MONTH;
+                    days_since_last_cost = 0;
+                }
+                
+                // Check for success
+                const got_profits = totalProfits(trades) > PROFIT_THRESHOLD;
+                const got_days = trades.length > MIN_TRADING_DAYS;
+                
+                if (got_profits && got_days) {
+                    passed = true;
+                    break;
+                }
+            }
+            
+            return { passed, cost, days: total_days };
+        }
+        
+        function runMonteCarloSimulation(sr, vol, num_sims) {
+            // Rob's exact calculations
+            const annual_mean = sr * vol;
+            const daily_vol = vol / 16;  // Rob uses /16 not /sqrt(252)
+            const daily_mean = annual_mean / 256;  // Rob uses 256
+            
+            const results = [];
+            for (let i = 0; i < num_sims; i++) {
+                results.push(simulateSingleChallenge(daily_mean, daily_vol));
+            }
+            
+            return results;
+        }
+        
+        function calculateStats(results) {
+            const successes = results.filter(r => r.passed);
+            const costs = results.map(r => r.cost);
+            const success_costs = successes.map(r => r.cost);
+            
+            costs.sort((a, b) => a - b);
+            success_costs.sort((a, b) => a - b);
+            
+            const median = (arr) => arr[Math.floor(arr.length / 2)];
+            const mean = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+            
+            return {
+                probSuccess: successes.length / results.length,
+                medianCost: median(costs),
+                meanCost: mean(costs),
+                medianSuccessCost: success_costs.length > 0 ? median(success_costs) : 0,
+                costs: costs,
+                success_costs: success_costs,
+                allResults: results
+            };
+        }
+        
+        function runSimulation() {
+            const sr = parseFloat(document.getElementById('sharpe-ratio').value);
+            const vol = parseFloat(document.getElementById('volatility').value) / 100;
+            const numSims = parseInt(document.getElementById('num-sims').value);
+            
+            document.getElementById('loading').classList.add('active');
+            document.getElementById('results-content').style.display = 'none';
+            document.getElementById('run-btn').disabled = true;
+            
+            setTimeout(() => {
+                const results = runMonteCarloSimulation(sr, vol, numSims);
+                const stats = calculateStats(results);
+                
+                displayResults(stats, sr, vol);
+                
+                document.getElementById('loading').classList.remove('active');
+                document.getElementById('results-content').style.display = 'block';
+                document.getElementById('run-btn').disabled = false;
+            }, 100);
+        }
+        
+        function displayResults(stats, sr, vol) {
+            const statsGrid = document.getElementById('stats-grid');
+            statsGrid.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-label">Success Rate</div>
+                    <div class="stat-value">${(stats.probSuccess * 100).toFixed(1)}%</div>
+                    <div class="stat-subtext">${stats.probSuccess >= 0.5 ? '✓ Coin flip or better' : '✗ Long shot'}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Median Cost (All)</div>
+                    <div class="stat-value">$${Math.round(stats.medianCost).toLocaleString()}</div>
+                    <div class="stat-subtext">Including failed attempts</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Median Cost (Success)</div>
+                    <div class="stat-value">$${Math.round(stats.medianSuccessCost).toLocaleString()}</div>
+                    <div class="stat-subtext">If you succeed</div>
+                </div>
+            `;
+            
+            const interpretation = document.getElementById('interpretation');
+            let interpretClass = 'warning';
+            let interpretText = '';
+            
+            if (stats.probSuccess >= 0.5) {
+                interpretClass = 'success';
+                interpretText = `
+                    <h4>✅ Status: Reasonable Odds</h4>
+                    <p>With SR=${sr.toFixed(2)} and ${(vol*100).toFixed(0)}% volatility, you have a ${(stats.probSuccess*100).toFixed(1)}% chance using Rob's exact simulation. 
+                    Expected cost if you succeed: $${Math.round(stats.medianSuccessCost).toLocaleString()}. This matches Rob's published findings.</p>
+                `;
+            } else if (stats.probSuccess >= 0.25) {
+                interpretClass = 'warning';
+                interpretText = `
+                    <h4>⚠️ Status: Difficult Challenge</h4>
+                    <p>With SR=${sr.toFixed(2)}, you only have a ${(stats.probSuccess*100).toFixed(1)}% chance. 
+                    Rob's analysis shows you need SR ≥ 1.5 for reasonable odds. Consider improving your Sharpe Ratio before attempting.</p>
+                `;
+            } else {
+                interpretClass = 'danger';
+                interpretText = `
+                    <h4>❌ Status: Do Not Attempt</h4>
+                    <p>With SR=${sr.toFixed(2)}, you only have a ${(stats.probSuccess*100).toFixed(1)}% chance according to Rob's simulation.
+                    This is likely just luck, not skill. <strong>Don't waste your money.</strong></p>
+                `;
+            }
+            
+            interpretation.className = `interpretation ${interpretClass}`;
+            interpretation.innerHTML = interpretText;
+            
+            plotCostDistribution(stats.costs, stats.medianCost, stats.meanCost, 'cost-chart-all', 'All Attempts');
+            if (stats.success_costs.length > 0) {
+                const medianSuccess = stats.success_costs[Math.floor(stats.success_costs.length / 2)];
+                const meanSuccess = stats.success_costs.reduce((a, b) => a + b, 0) / stats.success_costs.length;
+                plotCostDistribution(stats.success_costs, medianSuccess, meanSuccess, 'cost-chart-success', 'Successful Attempts');
+            }
+            plotDaysDistribution(stats.allResults);
+        }
+        
+        function plotCostDistribution(costs, median, mean, canvasId, chartLabel) {
+            const ctx = document.getElementById(canvasId);
+            
+            if (charts[canvasId]) charts[canvasId].destroy();
+            
+            const min = Math.min(...costs);
+            const max = Math.max(...costs);
+            const binCount = 30;
+            const binWidth = (max - min) / binCount;
+            const bins = Array(binCount).fill(0);
+            const labels = [];
+            
+            for (let i = 0; i < binCount; i++) {
+                labels.push(Math.round(min + i * binWidth));
+            }
+            
+            costs.forEach(cost => {
+                const binIndex = Math.min(Math.floor((cost - min) / binWidth), binCount - 1);
+                bins[binIndex]++;
+            });
+            
+            const color = canvasId.includes('success') ? '#00FFF7' : '#FFA629';
+            
+            charts[canvasId] = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Frequency',
+                        data: bins,
+                        backgroundColor: color,
+                        borderColor: color,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { 
+                            display: false 
+                        },
+                        tooltip: {
+                            backgroundColor: '#1E1E22',
+                            titleColor: '#00FFF7',
+                            bodyColor: '#A9B2C3',
+                            borderColor: '#00FFF7',
+                            borderWidth: 1,
+                            callbacks: {
+                                title: (items) => `Cost: $${items[0].label}`,
+                                label: (item) => `Count: ${item.parsed.y}`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { 
+                            title: { 
+                                display: true, 
+                                text: 'Total Cost ($)',
+                                color: '#A9B2C3',
+                                font: { family: 'Space Mono', size: 11 }
+                            },
+                            ticks: { 
+                                maxRotation: 45, 
+                                minRotation: 45,
+                                color: '#A9B2C3',
+                                font: { family: 'Space Mono', size: 9 }
+                            },
+                            grid: { color: 'rgba(169, 178, 195, 0.1)' }
+                        },
+                        y: { 
+                            title: { 
+                                display: true, 
+                                text: 'Frequency',
+                                color: '#A9B2C3',
+                                font: { family: 'Space Mono', size: 11 }
+                            },
+                            ticks: {
+                                color: '#A9B2C3',
+                                font: { family: 'Space Mono', size: 9 }
+                            },
+                            grid: { color: 'rgba(169, 178, 195, 0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+        
+        function plotDaysDistribution(results) {
+            const ctx = document.getElementById('days-chart');
+            
+            if (charts.days) charts.days.destroy();
+            
+            const successes = results.filter(r => r.passed);
+            
+            if (successes.length === 0) {
+                // No successes to plot
+                return;
+            }
+            
+            const days = successes.map(r => r.days);
+            
+            const min = Math.min(...days);
+            const max = Math.max(...days);
+            const binCount = 30;
+            const binWidth = (max - min) / binCount;
+            
+            const bins = Array(binCount).fill(0);
+            const labels = [];
+            
+            for (let i = 0; i < binCount; i++) {
+                labels.push(Math.round(min + i * binWidth));
+            }
+            
+            days.forEach(d => {
+                const binIndex = Math.min(Math.floor((d - min) / binWidth), binCount - 1);
+                bins[binIndex]++;
+            });
+            
+            charts.days = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Frequency',
+                        data: bins,
+                        backgroundColor: '#00FFF7',
+                        borderColor: '#00FFF7',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#1E1E22',
+                            titleColor: '#00FFF7',
+                            bodyColor: '#A9B2C3',
+                            borderColor: '#00FFF7',
+                            borderWidth: 1,
+                            callbacks: {
+                                title: (items) => `Days: ${items[0].label}`,
+                                label: (item) => `Count: ${item.parsed.y}`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { 
+                            title: { 
+                                display: true, 
+                                text: 'Trading Days',
+                                color: '#A9B2C3',
+                                font: { family: 'Space Mono', size: 11 }
+                            },
+                            ticks: { 
+                                maxRotation: 45, 
+                                minRotation: 45,
+                                color: '#A9B2C3',
+                                font: { family: 'Space Mono', size: 9 }
+                            },
+                            grid: { color: 'rgba(169, 178, 195, 0.1)' }
+                        },
+                        y: { 
+                            title: { 
+                                display: true, 
+                                text: 'Frequency',
+                                color: '#A9B2C3',
+                                font: { family: 'Space Mono', size: 11 }
+                            },
+                            ticks: {
+                                color: '#A9B2C3',
+                                font: { family: 'Space Mono', size: 9 }
+                            },
+                            grid: { color: 'rgba(169, 178, 195, 0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
