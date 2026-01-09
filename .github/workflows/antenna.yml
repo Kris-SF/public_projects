@@ -1,0 +1,61 @@
+name: The Antenna
+
+on:
+  schedule:
+    # Run at 8 AM and 6 PM UTC (adjust for your timezone)
+    - cron: '0 8 * * *'
+    - cron: '0 18 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    working-directory: antenna
+
+jobs:
+  extract-signals:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: antenna/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run The Antenna
+        env:
+          GMAIL_TOKEN: ${{ secrets.GMAIL_TOKEN }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SIGNALS_OUTPUT_DIR: signals
+        run: python -m src.antenna
+
+      - name: Commit and push signals
+        working-directory: .
+        run: |
+          git config --local user.email "antenna[bot]@users.noreply.github.com"
+          git config --local user.name "The Antenna Bot"
+
+          # Check if there are any new signal files
+          if [ -n "$(git status antenna/signals/ --porcelain)" ]; then
+            git add antenna/signals/
+            git commit -m "signals: extract $(date +%Y-%m-%d_%H%M)"
+            git push
+            echo "New signals committed and pushed"
+          else
+            echo "No new signals to commit"
+          fi
