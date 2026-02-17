@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delta Hedge Vol Bias Cheatsheet</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #F6F4EE;
+    color: #182B40;
+    display: flex;
+    justify-content: center;
+    padding: 44px 24px;
+  }
+  .page { width: 600px; max-width: 100%; }
+  /* Type */
+  .brand {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: #00C4E7;
+    margin-bottom: 8px;
+  }
+  h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 24px;
+    font-weight: 700;
+    color: #182B40;
+    letter-spacing: -0.4px;
+    line-height: 1.25;
+    margin-bottom: 8px;
+  }
+  h1 span {
+    font-weight: 400;
+    color: #6a7a8a;
+  }
+  .subtitle {
+    font-size: 13.5px;
+    color: #6a7a8a;
+    line-height: 1.55;
+    margin-bottom: 28px;
+  }
+  /* Mechanic strip */
+  .mechanic {
+    border-top: 2px solid #182B40;
+    border-bottom: 1px solid #CFCFCF;
+    padding: 10px 0;
+    margin-bottom: 28px;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .mechanic-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    color: #9aa5b0;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .mechanic-text {
+    font-size: 13px;
+    color: #182B40;
+  }
+  .mechanic-text strong {
+    font-weight: 700;
+  }
+  .mechanic-aside {
+    font-size: 12px;
+    color: #9aa5b0;
+  }
+  /* Sections */
+  .section { margin-bottom: 24px; }
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #182B40;
+    margin-bottom: 0;
+  }
+  .section-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: #182B40;
+  }
+  .section-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #9aa5b0;
+  }
+  /* Table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead th {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #9aa5b0;
+    padding: 8px 0;
+    text-align: left;
+    border-bottom: 1px solid #CFCFCF;
+  }
+  tbody td {
+    padding: 11px 0;
+    padding-right: 12px;
+    border-bottom: 1px solid #e4e1da;
+    vertical-align: top;
+    color: #182B40;
+  }
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .condition {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .delta-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  .delta-heavy { color: #182B40; }
+  .delta-light { color: #00C4E7; }
+  .regime {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  .regime-chop {
+    color: #182B40;
+    background: #CFCFCF;
+  }
+  .regime-trend {
+    color: #fff;
+    background: #182B40;
+  }
+  .note {
+    font-size: 12px;
+    color: #6a7a8a;
+    line-height: 1.4;
+  }
+  /* Pattern */
+  .pattern {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+    padding-top: 4px;
+  }
+  .pattern-card {
+    flex: 1;
+    padding: 14px 16px;
+    border-top: 3px solid;
+  }
+  .pattern-card-heavy {
+    border-color: #182B40;
+    background: #fff;
+  }
+  .pattern-card-light {
+    border-color: #00C4E7;
+    background: #fff;
+  }
+  .pattern-label {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .pattern-label-heavy { color: #182B40; }
+  .pattern-label-light { color: #00a5c4; }
+  .pattern-desc {
+    font-size: 12px;
+    color: #6a7a8a;
+    line-height: 1.45;
+  }
+  /* Insight */
+  .insight {
+    border-top: 2px solid #182B40;
+    padding-top: 14px;
+  }
+  .insight-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    color: #00C4E7;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 6px;
+  }
+  .insight-text {
+    font-size: 13px;
+    color: #4a5a6a;
+    line-height: 1.65;
+  }
+  .insight-text strong {
+    color: #182B40;
+    font-weight: 600;
+  }
+  hr.sep {
+    border: none;
+    border-top: 1px solid #CFCFCF;
+    margin: 24px 0;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="brand">moontower</div>
+  <h1>Hedging on Implied Delta<br><span>What's My Bias?</span></h1>
+  <p class="subtitle">
+    When implied ≠ realized, your model-computed delta over- or under-hedges you. That bias has a regime where it's a feature, not a bug.
+  </p>
+  <div class="mechanic">
+    <span class="mechanic-label">Core mechanic</span>
+    <span class="mechanic-text">Higher vol → all deltas compress toward <strong>.50</strong></span>
+    <span class="mechanic-aside">(ITM lighter · OTM heavier)</span>
+  </div>
+  <!-- OTM -->
+  <div class="section">
+    <div class="section-head">
+      <span class="section-title">OTM Options</span>
+      <span class="section-sub">higher vol → heavier delta</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:38%">If you hedge on implied and…</th>
+          <th style="width:14%">Your Δ</th>
+          <th style="width:14%">Prefers</th>
+          <th>Why</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="condition">Implied &gt; Realized</td>
+          <td><span class="delta-val delta-heavy">Heavy</span></td>
+          <td><span class="regime regime-chop">Chop</span></td>
+          <td class="note">Over-hedging scalps mean-reversion — more shares traded than "true" delta warrants</td>
+        </tr>
+        <tr>
+          <td class="condition">Implied &lt; Realized</td>
+          <td><span class="delta-val delta-light">Light</span></td>
+          <td><span class="regime regime-trend">Trend</span></td>
+          <td class="note">Under-hedging lets gamma run — fewer offsetting shares, profitable if direction persists</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <!-- ITM -->
+  <div class="section">
+    <div class="section-head">
+      <span class="section-title">ITM Options</span>
+      <span class="section-sub">higher vol → lighter delta</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:38%">If you hedge on implied and…</th>
+          <th style="width:14%">Your Δ</th>
+          <th style="width:14%">Prefers</th>
+          <th>Why</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="condition">Implied &gt; Realized</td>
+          <td><span class="delta-val delta-light">Light</span></td>
+          <td><span class="regime regime-trend">Trend</span></td>
+          <td class="note">Under-hedging lets gamma run — fewer shares against a deep option, profitable if direction persists</td>
+        </tr>
+        <tr>
+          <td class="condition">Implied &lt; Realized</td>
+          <td><span class="delta-val delta-heavy">Heavy</span></td>
+          <td><span class="regime regime-chop">Chop</span></td>
+          <td class="note">Over-hedging scalps mean-reversion — more shares against a deep option, profitable if stock reverses</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <hr class="sep">
+  <!-- Pattern -->
+  <div class="pattern">
+    <div class="pattern-card pattern-card-heavy">
+      <div class="pattern-label pattern-label-heavy">Heavy Δ → Chop</div>
+      <div class="pattern-desc">Over-hedging is profitable when the stock mean-reverts. You're scalping more aggressively than warranted.</div>
+    </div>
+    <div class="pattern-card pattern-card-light">
+      <div class="pattern-label pattern-label-light">Light Δ → Trend</div>
+      <div class="pattern-desc">Under-hedging is profitable when the stock trends. Less offset lets gamma profits compound.</div>
+    </div>
+  </div>
+  <!-- Insight -->
+  <div class="insight">
+    <div class="insight-label">Why "trend" is already in the framework</div>
+    <div class="insight-text">
+      Daily close-to-close realized vol <strong>understates</strong> trending markets. Each daily return is small and same-signed — low RV. Sample less often (weekly) and the drift compounds — <strong>high RV</strong>. So "Implied&nbsp;&gt;&nbsp;Realized" in a trending stock is partly a <strong>measurement artifact</strong>. The cheatsheet captures this: "Light&nbsp;Δ → prefers Trend" is exactly where daily RV misleads you.
+    </div>
+  </div>
+</div>
+</body>
+</html>
