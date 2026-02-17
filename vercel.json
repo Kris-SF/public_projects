@@ -1,6 +1,7 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "framework": "vite",
-  "installCommand": "npm install"
+  "buildCommand": "",
+  "outputDirectory": ".",
+  "framework": null,
+  "installCommand": "",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':!trading-sim' ':!trading-sim2'"
 }
