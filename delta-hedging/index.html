@@ -16,7 +16,6 @@
     padding: 44px 24px;
   }
   .page { width: 600px; max-width: 100%; }
-  /* Type */
   .brand {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10px;
@@ -43,9 +42,18 @@
     font-size: 13.5px;
     color: #6a7a8a;
     line-height: 1.55;
-    margin-bottom: 28px;
+    margin-bottom: 12px;
   }
-  /* Mechanic strip */
+  .perspective {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #182B40;
+    background: #fff;
+    border-left: 3px solid #00C4E7;
+    padding: 8px 12px;
+    margin-bottom: 28px;
+    line-height: 1.5;
+  }
   .mechanic {
     border-top: 2px solid #182B40;
     border-bottom: 1px solid #CFCFCF;
@@ -63,6 +71,7 @@
     color: #9aa5b0;
     text-transform: uppercase;
     letter-spacing: 1px;
+    margin-right: 4px;
   }
   .mechanic-text {
     font-size: 13px;
@@ -75,12 +84,11 @@
     font-size: 12px;
     color: #9aa5b0;
   }
-  /* Sections */
   .section { margin-bottom: 24px; }
   .section-head {
     display: flex;
     align-items: baseline;
-    gap: 10px;
+    gap: 12px;
     padding-bottom: 6px;
     border-bottom: 2px solid #182B40;
     margin-bottom: 0;
@@ -90,13 +98,13 @@
     font-size: 15px;
     font-weight: 700;
     color: #182B40;
+    margin-right: 4px;
   }
   .section-sub {
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
     color: #9aa5b0;
   }
-  /* Table */
   table {
     width: 100%;
     border-collapse: collapse;
@@ -156,7 +164,6 @@
     color: #6a7a8a;
     line-height: 1.4;
   }
-  /* Pattern */
   .pattern {
     display: flex;
     gap: 16px;
@@ -189,7 +196,6 @@
     color: #6a7a8a;
     line-height: 1.45;
   }
-  /* Insight */
   .insight {
     border-top: 2px solid #182B40;
     padding-top: 14px;
@@ -226,8 +232,11 @@
   <p class="subtitle">
     When implied ≠ realized, your model-computed delta over- or under-hedges you. That bias has a regime where it's a feature, not a bug.
   </p>
+  <div class="perspective">
+    Written from the perspective of a <strong>long option holder</strong>. By delta hedging, you are replicating the sale of an option — isolating vol as the P&L driver.
+  </div>
   <div class="mechanic">
-    <span class="mechanic-label">Core mechanic</span>
+    <span class="mechanic-label">Core mechanic ·</span>
     <span class="mechanic-text">Higher vol → all deltas compress toward <strong>.50</strong></span>
     <span class="mechanic-aside">(ITM lighter · OTM heavier)</span>
   </div>
@@ -235,7 +244,7 @@
   <div class="section">
     <div class="section-head">
       <span class="section-title">OTM Options</span>
-      <span class="section-sub">higher vol → heavier delta</span>
+      <span class="section-sub"> · higher vol → heavier delta</span>
     </div>
     <table>
       <thead>
@@ -266,7 +275,7 @@
   <div class="section">
     <div class="section-head">
       <span class="section-title">ITM Options</span>
-      <span class="section-sub">higher vol → lighter delta</span>
+      <span class="section-sub"> · higher vol → lighter delta</span>
     </div>
     <table>
       <thead>
