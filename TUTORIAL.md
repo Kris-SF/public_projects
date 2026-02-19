@@ -353,21 +353,28 @@ Click "Deploy" - Vercel will:
 
 ## Custom Domain Configuration
 
-### 1. Add Domain in Vercel
+> **WARNING: `moontowermeta.com` (the root/apex domain) is hosted on WordPress.**
+> **NEVER add `moontowermeta.com` to a Vercel project. Only use SUBDOMAINS like `xyz.moontowermeta.com`.**
+> Adding the root domain to Vercel would redirect it away from WordPress and break your main site.
+
+### 1. Add a SUBDOMAIN in Vercel
 
 1. Go to project **Settings** → **Domains**
-2. Enter your custom domain (e.g., `sasha.moontowermeta.com`)
+2. Enter a **subdomain** (e.g., `sasha.moontowermeta.com`, `delta-hedging.moontowermeta.com`)
 3. Click "Add"
+4. **NEVER enter `moontowermeta.com` by itself** — that's your WordPress site
 
-### 2. Configure DNS
+### 2. Configure DNS (CNAME only — never an A record for the root)
 
-Vercel will show DNS instructions. Add a CNAME record at your DNS provider:
+Add a **CNAME** record at your DNS provider for the **subdomain only**:
 
 ```
 Type: CNAME
-Name: sasha (or your subdomain)
-Value: cname.vercel-dns.com (or the specific value Vercel provides)
+Name: sasha              ← the subdomain prefix only
+Value: cname.vercel-dns.com
 ```
+
+**Do NOT add an A record pointing `moontowermeta.com` to Vercel's IP.** That would hijack the root domain away from WordPress.
 
 ### 3. Verify Domain
 
@@ -383,10 +390,17 @@ Value: vc-domain-verify=... (provided by Vercel)
 
 ### 4. Multiple Projects from One Repo
 
-You can create multiple Vercel projects from the same GitHub repo:
-- Each project can deploy from a different branch
+You can create multiple Vercel projects from the same GitHub repo. Each project gets its own **subdomain**:
+
+| Vercel Project | Root Directory | Subdomain |
+|---|---|---|
+| sasha | `sasha/` | `sasha.moontowermeta.com` |
+| delta-hedging | `delta-hedging/` | `delta-hedging.moontowermeta.com` |
+| trading-sim | `trading-sim/` | `trading-sim.moontowermeta.com` |
+
+- Each project deploys from a different subdirectory in the same repo
 - Each has independent domains and environment variables
-- Perfect for hosting multiple apps in one monorepo
+- **The root domain `moontowermeta.com` always stays on WordPress**
 
 ---
 
