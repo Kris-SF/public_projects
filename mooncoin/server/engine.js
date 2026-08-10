@@ -162,15 +162,16 @@ export function matchOrders(orders, lastMark) {
     if (filled !== 0) fills.push({ playerId: o.playerId, qty: filled, price });
   }
 
-  const limitFilled = sellAlloc.reduce((a, b) => a + b, 0) + buyAlloc.reduce((a, b) => a + b, 0);
-  const marketFilled = book.marketBid + book.marketOffer;
+  // Whatever the players do not net out among themselves, the house is on the
+  // other side of. Counting unmatched market volume directly would double-count
+  // opposing market orders, which satisfy each other before the house is needed.
+  const net = fills.reduce((a, f) => a + f.qty, 0);
 
   return {
     ...book,
     price,
     fills,
-    // Volume the resting book could not supply, absorbed by the house.
-    houseResidual: marketFilled - limitFilled,
+    houseResidual: Math.abs(net),
   };
 }
 

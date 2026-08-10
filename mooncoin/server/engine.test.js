@@ -124,6 +124,33 @@ test('pro-rata allocation never conjures or loses shares', () => {
   assert.equal(r.houseResidual, 0);
 });
 
+test('opposing market orders satisfy each other before the house', () => {
+  const r = matchOrders([
+    { playerId: 'buyer', qty: 9, type: 'MARKET' },
+    { playerId: 'seller', qty: -4, type: 'MARKET' },
+  ], 100);
+
+  assert.equal(r.imbalance, 5);
+  assert.equal(r.price, 103);
+  assert.equal(r.houseResidual, 5, 'the four that crossed need no house');
+});
+
+test('house residual always equals the unmatched net', () => {
+  const books = [
+    [['a', 4, 'MARKET'], ['b', -4, 'LIMIT']],
+    [['a', 5, 'MARKET'], ['b', -3, 'LIMIT']],
+    [['a', 9, 'MARKET'], ['b', -4, 'MARKET']],
+    [['a', 6, 'MARKET'], ['b', 6, 'MARKET'], ['c', -4, 'LIMIT']],
+    [['a', 20, 'LIMIT'], ['b', -20, 'LIMIT']],
+  ];
+  for (const spec of books) {
+    const orders = spec.map(([playerId, qty, type]) => ({ playerId, qty, type }));
+    const r = matchOrders(orders, 100);
+    const net = r.fills.reduce((a, f) => a + f.qty, 0);
+    assert.equal(r.houseResidual, Math.abs(net), JSON.stringify(spec));
+  }
+});
+
 test('unopposed limit orders do not trade', () => {
   const r = matchOrders([
     { playerId: 'a', qty: 10, type: 'LIMIT' },
