@@ -1,88 +1,113 @@
 /**
- * Snapshot persistence.
+ * Game storage.
  *
- * Games are small and short-lived, so the whole set is kept in memory and
- * flushed to one JSON file on a short debounce. That is enough to survive a
- * restart or a redeploy mid-game, which is the only durability this needs.
+ * Serverless functions share no memory, so game state lives in Redis. Talks the
+ * Upstash REST API directly over fetch — no SDK, no dependency — which is what
+ * both the Vercel KV integration and a plain Upstash database expose.
+ *
+ * With no Redis configured it falls back to an in-process Map. That is correct
+ * for local development and for the tests; on serverless it is NOT, because
+ * consecutive requests can land on different instances. `configured` is exported
+ * so the UI can say so out loud rather than behaving strangely.
  */
 
-import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync } from 'node:fs';
-import { dirname } from 'node:path';
+const URL_ENV = ['KV_REST_API_URL', 'UPSTASH_REDIS_REST_URL', 'REDIS_REST_URL'];
+const TOKEN_ENV = ['KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_TOKEN', 'REDIS_REST_TOKEN'];
 
-const FLUSH_MS = 250;
-const MAX_AGE_MS = 12 * 60 * 60 * 1000;   // a table abandoned for half a day is done
+const pick = (names) => names.map((n) => process.env[n]).find(Boolean);
 
-export class Store {
-  constructor(path) {
-    this.path = path;
-    this.games = new Map();
-    this.timer = null;
-    this.load();
-  }
+const REST_URL = pick(URL_ENV)?.replace(/\/$/, '');
+const REST_TOKEN = pick(TOKEN_ENV);
 
-  load() {
-    if (!this.path || !existsSync(this.path)) return;
-    try {
-      const raw = JSON.parse(readFileSync(this.path, 'utf8'));
-      for (const game of raw.games ?? []) {
-        // Nobody is connected across a restart, whatever the snapshot claimed.
-        for (const p of game.players) p.connected = false;
-        this.games.set(game.code, game);
-      }
-      this.sweep();
-      console.log(`[store] restored ${this.games.size} game(s) from ${this.path}`);
-    } catch (err) {
-      console.error(`[store] could not read ${this.path}, starting empty:`, err.message);
-    }
-  }
+export const configured = Boolean(REST_URL && REST_TOKEN);
 
-  flush() {
-    if (!this.path) return;
-    try {
-      mkdirSync(dirname(this.path), { recursive: true });
-      const tmp = `${this.path}.tmp`;
-      writeFileSync(tmp, JSON.stringify({ games: [...this.games.values()] }));
-      renameSync(tmp, this.path);   // atomic, so a crash mid-write cannot corrupt it
-    } catch (err) {
-      console.error('[store] flush failed:', err.message);
-    }
-  }
+const TTL_SECONDS = 12 * 60 * 60;   // a table abandoned for half a day is done
+const LOCK_MS = 4000;
+const LOCK_TRIES = 25;
+const LOCK_WAIT_MS = 60;
 
-  /** Coalesce the writes a burst of player actions would otherwise cause. */
-  touch() {
-    if (!this.path || this.timer) return;
-    this.timer = setTimeout(() => {
-      this.timer = null;
-      this.flush();
-    }, FLUSH_MS);
-    this.timer.unref?.();
-  }
+const memory = new Map();
 
-  get(code) {
-    return this.games.get(code);
-  }
+async function command(...args) {
+  const res = await fetch(REST_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${REST_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(args.map(String)),
+  });
+  if (!res.ok) throw new Error(`Redis ${args[0]} failed: ${res.status} ${await res.text()}`);
+  const { result, error } = await res.json();
+  if (error) throw new Error(`Redis ${args[0]}: ${error}`);
+  return result;
+}
 
-  set(game) {
-    this.games.set(game.code, game);
-    this.touch();
+const key = (code) => `mooncoin:game:${code}`;
+const lockKey = (code) => `mooncoin:lock:${code}`;
+
+export async function load(code) {
+  if (!configured) return memory.get(code) ?? null;
+  const raw = await command('GET', key(code));
+  return raw ? JSON.parse(raw) : null;
+}
+
+export async function save(game) {
+  if (!configured) {
+    memory.set(game.code, game);
     return game;
   }
+  await command('SET', key(game.code), JSON.stringify(game), 'EX', TTL_SECONDS);
+  return game;
+}
 
-  delete(code) {
-    const gone = this.games.delete(code);
-    if (gone) this.touch();
-    return gone;
+export async function exists(code) {
+  if (!configured) return memory.has(code);
+  return (await command('EXISTS', key(code))) === 1;
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Run `fn` against the game under an exclusive lock, then persist whatever it
+ * returns. Without this, two players confirming at the same instant would both
+ * read the pre-confirm state and one write would erase the other — which on a
+ * ready-gate means a round that never trips.
+ */
+export async function mutate(code, fn) {
+  if (!configured) {
+    const game = memory.get(code);
+    if (!game) throw new Error(`No table with code ${code}`);
+    const result = await fn(game);
+    memory.set(code, game);
+    return result;
   }
 
-  sweep(now = Date.now()) {
-    let dropped = 0;
-    for (const [code, game] of this.games) {
-      if (now - (game.lastActivity ?? game.createdAt) > MAX_AGE_MS) {
-        this.games.delete(code);
-        dropped++;
-      }
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  let held = false;
+  for (let i = 0; i < LOCK_TRIES && !held; i++) {
+    held = (await command('SET', lockKey(code), stamp, 'NX', 'PX', LOCK_MS)) !== null;
+    if (!held) await sleep(LOCK_WAIT_MS);
+  }
+  if (!held) throw new Error('Table is busy, try again');
+
+  try {
+    const raw = await command('GET', key(code));
+    if (!raw) throw new Error(`No table with code ${code}`);
+    const game = JSON.parse(raw);
+    const result = await fn(game);
+    await command('SET', key(code), JSON.stringify(game), 'EX', TTL_SECONDS);
+    return result;
+  } finally {
+    // Only release a lock we still own — a slow request whose lock already
+    // expired must not free the next holder's.
+    if ((await command('GET', lockKey(code))) === stamp) {
+      await command('DEL', lockKey(code)).catch(() => {});
     }
-    if (dropped) this.touch();
-    return dropped;
   }
+}
+
+/** Test seam. */
+export function _reset() {
+  memory.clear();
 }

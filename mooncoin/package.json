@@ -12,8 +12,5 @@
   },
   "engines": {
     "node": ">=20"
-  },
-  "dependencies": {
-    "ws": "^8.18.0"
   }
 }

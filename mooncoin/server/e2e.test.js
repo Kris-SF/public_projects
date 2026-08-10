@@ -1,6 +1,6 @@
 /**
- * End-to-end: a real HTTP + WebSocket server, real sockets, a full game played
- * through the same message protocol the browser uses.
+ * End-to-end: a real HTTP server, a full game played through the same requests
+ * the browser makes.
  */
 
 import test from 'node:test';
@@ -8,13 +8,10 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
-import { rmSync } from 'node:fs';
-import WebSocket from 'ws';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = 3199;
 const BASE = `http://127.0.0.1:${PORT}`;
-const DATA = join(HERE, '..', '.data', 'e2e-test.json');
 
 let proc;
 
@@ -34,44 +31,41 @@ function waitFor(predicate, what, timeout = 5000) {
   });
 }
 
-/** A test client that records every state push. */
-function client(hello) {
-  const c = {
-    ws: new WebSocket(`ws://127.0.0.1:${PORT}/ws`),
-    state: null, me: null, errors: [], seated: null,
-    send(m) { c.ws.send(JSON.stringify(m)); },
-    close() { c.ws.close(); },
-  };
-  c.ws.on('open', () => c.send({ type: 'hello', ...hello }));
-  c.ws.on('message', (raw) => {
-    const m = JSON.parse(raw);
-    if (m.type === 'state') { c.state = m.state; if (m.me) c.me = m.me; }
-    else if (m.type === 'seated') c.seated = m;
-    else if (m.type === 'error') c.errors.push(m.message);
+async function post(body) {
+  const res = await fetch(`${BASE}/api/game`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   });
-  return c;
+  return { status: res.status, body: await res.json() };
 }
 
+async function get(code, token) {
+  const qs = new URLSearchParams({ code });
+  if (token) qs.set('token', token);
+  const res = await fetch(`${BASE}/api/game?${qs}`);
+  return { status: res.status, body: await res.json() };
+}
+
+const newTable = async (config) => (await post({ action: 'create', config })).body;
+const sit = async (code, name) => (await post({ action: 'join', code, name })).body;
+const act = (code, token, action, extra = {}) => post({ action, code, token, ...extra });
+
 test.before(async () => {
-  rmSync(DATA, { force: true });
   proc = spawn(process.execPath, [join(HERE, 'index.js')], {
-    env: { ...process.env, PORT: String(PORT), MOONCOIN_DATA: DATA },
+    env: { ...process.env, PORT: String(PORT) },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   proc.stderr.on('data', (d) => process.stderr.write(`[server] ${d}`));
-
   await waitFor(async () => {
-    try { return (await fetch(`${BASE}/api/games/ZZZZ`)).status === 404; }
+    try { return (await fetch(`${BASE}/api/game?code=ZZZZ`)).status === 404; }
     catch { return false; }
   }, 'server to boot');
 });
 
-test.after(() => {
-  proc?.kill('SIGKILL');
-  rmSync(DATA, { force: true });
-});
+test.after(() => proc?.kill('SIGKILL'));
 
-// ---------------------------------------------------------------------------
+// --- Static ---------------------------------------------------------------
 
 test('serves the app shell on a room path', async () => {
   const res = await fetch(`${BASE}/ABCD`);
@@ -85,197 +79,183 @@ test('static assets are served', async () => {
 });
 
 test('directory traversal is refused', async () => {
-  const res = await fetch(`${BASE}/../package.json`);
-  const body = await res.text();
-  assert.ok(!body.includes('"dependencies"'), 'must not serve files above public/');
+  const body = await (await fetch(`${BASE}/../package.json`)).text();
+  assert.ok(!body.includes('"scripts"'), 'must not serve files above public/');
 });
 
-test('a full game runs over websockets', async () => {
-  const created = await fetch(`${BASE}/api/games`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ maxRounds: 2, cardQty: 6 }),
-  });
-  assert.equal(created.status, 201);
-  const { code, hostToken } = await created.json();
+test('polled state is never cached', async () => {
+  const { code } = await newTable();
+  const res = await fetch(`${BASE}/api/game?code=${code}`);
+  assert.match(res.headers.get('cache-control'), /no-store/);
+});
+
+// --- A whole game ---------------------------------------------------------
+
+test('a full game runs over HTTP', async () => {
+  const { code, hostToken } = await newTable({ maxRounds: 2, cardQty: 6 });
   assert.match(code, /^[A-Z0-9]{4}$/);
 
-  const host = client({ role: 'host', code, hostToken });
-  const dash = client({ role: 'dashboard', code });
-  const alice = client({ role: 'player', code, name: 'alice' });
-  const bob = client({ role: 'player', code, name: 'bob' });
-
-  await waitFor(() => host.state?.seated === 2 && alice.me && bob.me, 'both players seated');
+  const alice = await sit(code, 'alice');
+  const bob = await sit(code, 'bob');
   assert.equal(alice.me.name, 'ALICE');
-  assert.ok(alice.seated.playerToken, 'player gets a reconnect token');
+  assert.ok(alice.playerToken);
+  assert.equal(bob.state.seated, 2);
 
-  // Dashboards never receive a hand.
-  assert.equal(dash.me, null);
+  // A tokenless poll is a dashboard, and gets no hand.
+  const dash = await get(code);
+  assert.equal(dash.body.role, 'dashboard');
+  assert.equal(dash.body.me, undefined);
 
-  host.send({ type: 'start' });
-  await waitFor(() => alice.state?.phase === 'orders', 'market to open');
-  assert.equal(alice.me.hand.up + alice.me.hand.down + alice.me.hand.multiply + alice.me.hand.add, 6);
+  // Roles come from the token, not from asking nicely.
+  assert.equal((await get(code, hostToken)).body.role, 'host');
+  assert.equal((await get(code, alice.playerToken)).body.role, 'player');
 
-  // Round 1 — alice lifts 4 at market, bob rests 4 offered.
-  alice.send({ type: 'order', qty: 4, orderType: 'MARKET' });
-  alice.send({ type: 'confirmOrder' });
-  await waitFor(() => alice.me?.ordersReady, 'alice confirmed');
-  assert.equal(alice.state.phase, 'orders', 'gate holds for bob');
-  assert.deepEqual(alice.state.awaitingOrders, ['BOB']);
+  await act(code, hostToken, 'start');
+  const opened = await get(code, alice.playerToken);
+  assert.equal(opened.body.state.phase, 'orders');
+  const hand = opened.body.me.hand;
+  assert.equal(hand.up + hand.down + hand.multiply + hand.add, 6);
 
-  // Nothing about alice's size may be visible to bob before the gate trips.
-  assert.equal(bob.state.reveal, null);
-  assert.ok(!JSON.stringify(bob.state).includes('"qty":4'));
+  // Round 1 — alice takes 4 at market, bob rests 4 offered.
+  await act(code, alice.playerToken, 'order', { qty: 4, orderType: 'MARKET' });
+  const afterAlice = await act(code, alice.playerToken, 'confirmOrder');
+  assert.equal(afterAlice.body.state.phase, 'orders', 'gate holds for bob');
+  assert.deepEqual(afterAlice.body.state.awaitingOrders, ['BOB']);
 
-  bob.send({ type: 'order', qty: -4, orderType: 'LIMIT' });
-  bob.send({ type: 'confirmOrder' });
-  await waitFor(() => alice.state?.phase === 'cards', 'orders gate to trip');
+  // Alice's size must not be visible to bob before the gate trips.
+  const bobSees = await get(code, bob.playerToken);
+  assert.equal(bobSees.body.state.reveal, null);
+  assert.ok(!JSON.stringify(bobSees.body.state).includes('"qty":4'));
 
-  // Bob's resting offer covers Alice's demand exactly, so the print is flat.
-  assert.equal(alice.state.reveal.absorbed, 4);
-  assert.equal(alice.state.reveal.imbalance, 0);
-  assert.equal(alice.state.reveal.price, 100);
-  assert.equal(alice.state.reveal.houseResidual, 0);
-  await waitFor(() => alice.me?.fills.length === 1, 'blotter written by the engine');
-  assert.equal(alice.me.fills[0].price, 100);
-  assert.equal(alice.me.fills[0].qty, 4);
+  await act(code, bob.playerToken, 'order', { qty: -4, orderType: 'LIMIT' });
+  const tripped = await act(code, bob.playerToken, 'confirmOrder');
 
-  // Cards
-  alice.send({ type: 'confirmCards' });
-  bob.send({ type: 'confirmCards' });
-  await waitFor(() => alice.state?.phase === 'rolling', 'cards gate to trip');
-  assert.ok(dash.state.net, 'dashboard sees the reveal');
+  assert.equal(tripped.body.state.phase, 'cards');
+  // Bob's resting offer covers alice exactly, so the print is flat.
+  assert.equal(tripped.body.state.reveal.absorbed, 4);
+  assert.equal(tripped.body.state.reveal.imbalance, 0);
+  assert.equal(tripped.body.state.reveal.price, 100);
 
-  for (let i = 0; i < 4; i++) {
-    const before = host.state.rollStep;
-    host.send({ type: 'roll' });
-    await waitFor(() => host.state.rollStep !== before || host.state.round === 2, `die ${i + 1}`);
+  const filled = await get(code, alice.playerToken);
+  assert.equal(filled.body.me.fills.length, 1, 'blotter written by the engine');
+  assert.equal(filled.body.me.fills[0].price, 100);
+  assert.equal(filled.body.me.fills[0].qty, 4);
+
+  await act(code, alice.playerToken, 'confirmCards');
+  const rolling = await act(code, bob.playerToken, 'confirmCards');
+  assert.equal(rolling.body.state.phase, 'rolling');
+
+  for (let i = 0; i < 4; i++) await act(code, hostToken, 'roll');
+
+  const settled = await get(code, alice.playerToken);
+  assert.equal(settled.body.state.round, 2);
+  assert.equal(settled.body.state.history.length, 1);
+  assert.equal(settled.body.state.mark, settled.body.state.history[0].mark);
+
+  // Round 2 to the buzzer.
+  for (const p of [alice, bob]) {
+    await act(code, p.playerToken, 'order', { qty: 0, orderType: 'LIMIT' });
+    await act(code, p.playerToken, 'confirmOrder');
   }
+  for (const p of [alice, bob]) await act(code, p.playerToken, 'confirmCards');
+  for (let i = 0; i < 4; i++) await act(code, hostToken, 'roll');
 
-  await waitFor(() => alice.state?.round === 2, 'round to advance');
-  assert.equal(alice.state.history.length, 1);
-  assert.equal(alice.state.mark, alice.state.history[0].mark);
-
-  // Round 2 — both pass, then roll it out.
-  for (const c of [alice, bob]) {
-    c.send({ type: 'order', qty: 0, orderType: 'LIMIT' });
-    c.send({ type: 'confirmOrder' });
-  }
-  await waitFor(() => alice.state?.phase === 'cards', 'second orders gate');
-  alice.send({ type: 'confirmCards' });
-  bob.send({ type: 'confirmCards' });
-  await waitFor(() => alice.state?.phase === 'rolling', 'second cards gate');
-
-  for (let i = 0; i < 4; i++) {
-    const before = host.state.rollStep;
-    host.send({ type: 'roll' });
-    await waitFor(() => host.state.rollStep !== before || host.state.phase === 'complete', `r2 die ${i + 1}`);
-  }
-
-  await waitFor(() => alice.state?.phase === 'complete', 'game to close');
-
-  // P/L is zero-sum between the two of them: same fill, opposite sides.
-  const s = alice.state.standings;
-  assert.equal(s.reduce((a, p) => a + p.pl, 0), 0);
-
-  [host, dash, alice, bob].forEach((c) => c.close());
+  const done = await get(code, alice.playerToken);
+  assert.equal(done.body.state.phase, 'complete');
+  // Same fill, opposite sides, nothing left with the house.
+  assert.equal(done.body.state.standings.reduce((a, p) => a + p.pl, 0), 0);
 });
 
-test('a player reconnects to the same seat and blotter', async () => {
-  const { code, hostToken } = await (await fetch(`${BASE}/api/games`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ maxRounds: 1, cardQty: 4 }),
-  })).json();
+// --- Identity and access --------------------------------------------------
 
-  const host = client({ role: 'host', code, hostToken });
-  let carol = client({ role: 'player', code, name: 'carol' });
-  const dave = client({ role: 'player', code, name: 'dave' });
+test('a player rejoins the same seat with their token', async () => {
+  const { code, hostToken } = await newTable({ maxRounds: 1, cardQty: 4 });
+  const carol = await sit(code, 'carol');
+  const dave = await sit(code, 'dave');
 
-  await waitFor(() => host.state?.seated === 2 && carol.seated, 'seated');
-  const token = carol.seated.playerToken;
+  await act(code, hostToken, 'start');
+  await act(code, carol.playerToken, 'order', { qty: 9, orderType: 'MARKET' });
+  await act(code, carol.playerToken, 'confirmOrder');
+  await act(code, dave.playerToken, 'order', { qty: 0, orderType: 'LIMIT' });
+  await act(code, dave.playerToken, 'confirmOrder');
 
-  host.send({ type: 'start' });
-  await waitFor(() => carol.state?.phase === 'orders', 'open');
+  const before = await get(code, carol.playerToken);
+  assert.equal(before.body.me.fills.length, 1);
 
-  carol.send({ type: 'order', qty: 9, orderType: 'MARKET' });
-  carol.send({ type: 'confirmOrder' });
-  dave.send({ type: 'order', qty: 0, orderType: 'LIMIT' });
-  dave.send({ type: 'confirmOrder' });
-  await waitFor(() => carol.me?.fills.length === 1, 'filled');
-  const fills = JSON.stringify(carol.me.fills);
-
-  // Phone sleeps.
-  carol.close();
-  await waitFor(() => host.state.standings.find((p) => p.name === 'CAROL')?.connected === false,
-    'server to notice the drop');
-
-  carol = client({ role: 'player', code, playerToken: token });
-  await waitFor(() => carol.me, 'reconnect');
-
-  assert.equal(carol.me.name, 'CAROL');
-  assert.equal(carol.me.seat, 1);
-  assert.equal(JSON.stringify(carol.me.fills), fills, 'blotter survived the drop');
-
-  [host, carol, dave].forEach((c) => c.close());
+  // Same token after a reload is the same seat, not a new one.
+  const again = await post({ action: 'join', code, token: carol.playerToken, name: 'carol' });
+  assert.equal(again.body.me.seat, 1);
+  assert.equal(again.body.state.seated, 2, 'no duplicate seat created');
+  assert.deepEqual(again.body.me.fills, before.body.me.fills);
 });
 
 test('host controls are refused without the token', async () => {
-  const { code } = await (await fetch(`${BASE}/api/games`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-  })).json();
+  const { code } = await newTable();
+  const player = await sit(code, 'eve');
 
-  const imposter = client({ role: 'host', code, hostToken: 'not-the-token' });
-  await waitFor(() => imposter.errors.length, 'rejection');
-  assert.match(imposter.errors[0], /Bad host token/);
+  const asNobody = await act(code, null, 'start');
+  assert.equal(asNobody.status, 400);
+  assert.match(asNobody.body.error, /Host controls only/);
 
-  // A dashboard cannot drive the game either.
-  const dash = client({ role: 'dashboard', code });
-  await waitFor(() => dash.state, 'dashboard connected');
-  dash.send({ type: 'start' });
-  await waitFor(() => dash.errors.length, 'refusal');
-  assert.match(dash.errors[0], /Host controls only/);
+  const asPlayer = await act(code, player.playerToken, 'start');
+  assert.equal(asPlayer.status, 400);
+  assert.match(asPlayer.body.error, /Host controls only/);
 
-  [imposter, dash].forEach((c) => c.close());
+  const asWrongToken = await act(code, 'not-the-token', 'start');
+  assert.equal(asWrongToken.status, 400);
 });
 
-test('joining an unknown table fails cleanly', async () => {
-  const c = client({ role: 'player', code: 'ZZZZ', name: 'nobody' });
-  await waitFor(() => c.errors.length, 'error');
-  assert.match(c.errors[0], /No table with code/);
-  c.close();
+test('player actions are refused without a seat', async () => {
+  const { code, hostToken } = await newTable();
+  await sit(code, 'frank');
+  await act(code, hostToken, 'start');
+
+  const res = await act(code, hostToken, 'order', { qty: 5, orderType: 'MARKET' });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /Not seated/);
 });
 
-test('games survive a server restart', async () => {
-  const { code, hostToken } = await (await fetch(`${BASE}/api/games`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ maxRounds: 3, cardQty: 5 }),
-  })).json();
+test('an unknown table is a clean 404', async () => {
+  assert.equal((await get('ZZZZ')).status, 404);
+  const joined = await post({ action: 'join', code: 'ZZZZ', name: 'nobody' });
+  assert.equal(joined.status, 400);
+  assert.match(joined.body.error, /No table with code/);
+});
 
-  let host = client({ role: 'host', code, hostToken });
-  const erin = client({ role: 'player', code, name: 'erin' });
-  await waitFor(() => host.state?.seated === 1, 'seated');
-  host.send({ type: 'start' });
-  await waitFor(() => erin.state?.phase === 'orders', 'open');
-  const token = erin.seated.playerToken;
-  host.close(); erin.close();
+test('game-rule violations come back as errors, not crashes', async () => {
+  const { code, hostToken } = await newTable();
+  const p = await sit(code, 'gina');
 
-  // Let the debounced snapshot land, then bounce the process.
-  await new Promise((r) => setTimeout(r, 400));
-  proc.kill('SIGKILL');
-  await new Promise((r) => setTimeout(r, 150));
+  const early = await act(code, p.playerToken, 'order', { qty: 5, orderType: 'MARKET' });
+  assert.equal(early.status, 400);
+  assert.match(early.body.error, /Not accepting orders/);
 
-  proc = spawn(process.execPath, [join(HERE, 'index.js')], {
-    env: { ...process.env, PORT: String(PORT), MOONCOIN_DATA: DATA },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  await waitFor(async () => {
-    try { return (await fetch(`${BASE}/api/games/${code}`)).status === 200; }
-    catch { return false; }
-  }, 'server to come back with the game');
+  await act(code, hostToken, 'start');
+  const bogus = await act(code, p.playerToken, 'order', { qty: 5, orderType: 'STOP' });
+  assert.equal(bogus.status, 400);
+  assert.match(bogus.body.error, /LIMIT or MARKET/);
 
-  const back = client({ role: 'player', code, playerToken: token });
-  await waitFor(() => back.me, 'rejoin after restart');
-  assert.equal(back.me.name, 'ERIN');
-  assert.equal(back.state.phase, 'orders', 'mid-round state preserved');
-  back.close();
+  const unknown = await act(code, p.playerToken, 'levitate');
+  assert.equal(unknown.status, 400);
+  assert.match(unknown.body.error, /Unknown action/);
+});
+
+test('simultaneous confirms both land', async () => {
+  const { code, hostToken } = await newTable({ maxRounds: 1, cardQty: 4 });
+  const a = await sit(code, 'ann');
+  const b = await sit(code, 'ben');
+  await act(code, hostToken, 'start');
+
+  await act(code, a.playerToken, 'order', { qty: 2, orderType: 'MARKET' });
+  await act(code, b.playerToken, 'order', { qty: -2, orderType: 'LIMIT' });
+
+  // Both confirm at the same instant. Under a lost update one would be dropped
+  // and the gate would never trip.
+  await Promise.all([
+    act(code, a.playerToken, 'confirmOrder'),
+    act(code, b.playerToken, 'confirmOrder'),
+  ]);
+
+  const after = await get(code, a.playerToken);
+  assert.equal(after.body.state.phase, 'cards', 'gate tripped, so both confirms survived');
 });

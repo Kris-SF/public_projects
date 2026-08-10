@@ -405,7 +405,6 @@ export function standings(game) {
       id: p.id,
       seat: p.seat,
       name: p.name,
-      connected: p.connected,
       ...position(p.fills, game.mark),
       cardsLeft: p.hand.up + p.hand.down + p.hand.multiply + p.hand.add,
       ordersReady: !!game.ready.orders[p.id],

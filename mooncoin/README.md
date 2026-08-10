@@ -11,12 +11,12 @@ under [Changes from the spreadsheet](#changes-from-the-spreadsheet).
 ## Running it
 
 ```bash
-npm install
-npm start            # http://localhost:3000
-npm test             # 53 tests: engine, state machine, and a live socket game
+npm start            # http://localhost:3000 — no dependencies to install
+npm test             # 66 tests: engine, state machine, and a full game over HTTP
 ```
 
-Set `PORT` to move it, `MOONCOIN_DATA` to point the snapshot file somewhere else.
+Set `PORT` to move it. Locally, games live in the server process; see
+[Deploying](#deploying) for what production needs.
 
 Three surfaces, one room code:
 
@@ -143,29 +143,56 @@ adding them later is an extension, not a rewrite.
 ## Layout
 
 ```
+api/
+  game.js        Vercel serverless entry — thin adapter over the handler
 server/
   engine.js      pricing and position math, no state, no I/O
   game.js        state machine: phases, gates, dealing, settlement
-  store.js       JSON snapshot persistence
-  index.js       HTTP + WebSocket, room fan-out
+  handler.js     the API, transport-agnostic
+  store.js       Redis over the Upstash REST API, memory when unconfigured
+  index.js       local dev server: static files + the same handler
 public/
   index.html     shell
-  app.js         all three surfaces
+  app.js         all three surfaces, polling transport
   style.css      amber-on-black terminal styling
 ```
 
-`engine.js` is pure and has no dependencies — it can be lifted out and reused.
+Zero runtime dependencies. `engine.js` is pure — no state, no I/O — so it can be
+lifted out and reused as-is.
+
+## Transport
+
+Polling, not sockets. Serverless functions cannot hold a WebSocket open, and the
+game is turn-based, so a poll tick is indistinguishable from a push. Every action
+posts and gets the resulting state straight back — whoever acted never waits for
+a tick, and the polling only exists to show you what other people did.
+
+The interval adapts: ~1.5s while you owe the table an action, ~3s once you have
+confirmed, ~0.9s during the dice, and 10s on a hidden tab. That keeps a ten-player
+table well inside a free Redis tier.
 
 ## Deploying
 
-One long-lived Node process holding WebSockets, so it wants a container host —
-Render, Railway, Fly, or any box with Node 20+. It is not a fit for the static
-Vercel deploy at the root of this repo.
+Built for Vercel. Create a **new project** pointed at this repo with the root
+directory set to `mooncoin` — same arrangement as `trading-sim`, so it deploys
+independently of the static site at the repo root. Every branch then gets its own
+preview URL.
 
-```bash
-PORT=8080 npm start
-```
+**Add a Redis store, or the game will not work properly.** Serverless functions
+share no memory, so game state has to live somewhere both requests can reach:
 
-State lives in memory and is mirrored to `.data/games.json` on a short debounce,
-so a restart or redeploy mid-game is survivable. Tables idle for twelve hours are
-swept.
+1. Vercel dashboard → **Storage** → **Upstash for Redis** → create and connect it
+   to the Mooncoin project
+2. Redeploy
+
+That injects `KV_REST_API_URL` and `KV_REST_API_TOKEN`, which the store picks up
+automatically. `UPSTASH_REDIS_REST_URL` / `_TOKEN` work too, if you bring your own
+database.
+
+Without it the app still boots, but every screen shows a warning: consecutive
+requests can land on different instances holding different games, and tables will
+appear to vanish. State carries a twelve-hour TTL, so abandoned tables clean
+themselves up.
+
+It also runs anywhere with Node 20+ — `PORT=8080 npm start` — where the in-process
+fallback is perfectly correct, because there is only ever one process.

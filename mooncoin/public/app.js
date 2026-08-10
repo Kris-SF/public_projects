@@ -14,6 +14,7 @@ const S = {
   connected: false,
   error: null,
   notice: null,
+  ephemeral: false,   // server has no Redis — state may not survive between requests
 };
 
 const ui = {
@@ -74,75 +75,119 @@ const impactOf = (qty) => (qty === 0 ? 0 : Math.sign(qty) * Math.ceil(Math.sqrt(
 
 // --- Socket ----------------------------------------------------------------
 
+/**
+ * Transport: polling.
+ *
+ * The game is turn-based, so a poll tick is indistinguishable from a push, and
+ * it runs on serverless where a socket cannot. Every action posts and gets the
+ * resulting state straight back, so whoever acted never waits for a tick — the
+ * polling only exists to show you what other people did.
+ */
 const net = {
-  ws: null,
-  retry: 0,
-  hello: null,
+  timer: null,
+  token: null,
+  failures: 0,
 
-  connect(hello) {
-    this.hello = { type: 'hello', ...hello };
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/ws`);
-    this.ws = ws;
-
-    ws.onopen = () => {
-      this.retry = 0;
-      S.connected = true;
-      S.error = null;
-      ws.send(JSON.stringify(this.hello));
-    };
-
-    ws.onmessage = (ev) => {
-      const msg = JSON.parse(ev.data);
-      if (msg.type === 'state') {
-        const prev = S.state?.mark;
-        S.state = msg.state;
-        if (msg.me) S.me = msg.me;
-        if (prev !== undefined && msg.state.mark !== prev) {
-          ui.markFlash = msg.state.mark > prev ? 'flash-up' : 'flash-down';
-          setTimeout(() => { ui.markFlash = null; render(); }, 750);
-        }
-        // Clear the ticket when the round turns over, and only then — every
-        // player action broadcasts, and wiping on each one would erase a
-        // quantity somebody is halfway through typing.
-        const turned = ui.lastRound !== null && ui.lastRound !== msg.state.round;
-        if (turned) {
-          ui.qty = '';
-          ui.cards = { up: 0, down: 0, multiply: 0, add: 0 };
-        }
-        ui.lastRound = msg.state.round;
-        render();
-      } else if (msg.type === 'seated') {
-        store.setPlayerToken(S.code, msg.playerToken);
-      } else if (msg.type === 'die') {
-        ui.rolling = false;
-        render();
-      } else if (msg.type === 'error') {
-        S.error = msg.message;
-        ui.busy = false;
-        ui.rolling = false;
-        render();
-      }
-    };
-
-    ws.onclose = () => {
-      S.connected = false;
-      render();
-      // Back off, but keep trying — a phone that slept should rejoin on its own.
-      this.retry = Math.min(this.retry + 1, 6);
-      setTimeout(() => this.connect(this.hello), 400 * 2 ** (this.retry - 1));
-    };
-
-    ws.onerror = () => ws.close();
+  /** Faster while you owe the table an action, slower once you have acted. */
+  interval() {
+    const st = S.state;
+    if (document.hidden) return 10000;
+    if (!st) return 1200;
+    if (st.phase === 'rolling') return 900;
+    const me = S.me;
+    const owes = st.phase === 'orders' ? !me?.ordersReady
+      : st.phase === 'cards' ? !me?.cardsReady : false;
+    if (S.role !== 'player') return 1200;
+    return owes ? 1500 : 3000;
   },
 
-  send(msg) {
-    if (this.ws?.readyState === WebSocket.OPEN) {
+  start(tok) {
+    this.token = tok ?? this.token;
+    this.stop();
+    this.tick();
+  },
+
+  stop() {
+    clearTimeout(this.timer);
+    this.timer = null;
+  },
+
+  schedule() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.tick(), this.interval());
+  },
+
+  async tick() {
+    try {
+      const qs = new URLSearchParams({ code: S.code });
+      if (this.token) qs.set('token', this.token);
+      const res = await fetch(`/api/game?${qs}`, { cache: 'no-store' });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      apply(body);
+      this.failures = 0;
+      S.connected = true;
+    } catch (err) {
+      this.failures++;
+      // One dropped poll is noise; a run of them is worth showing.
+      if (this.failures >= 3) {
+        S.connected = false;
+        render();
+      }
+    }
+    this.schedule();
+  },
+
+  /** Post an action and adopt the state it returns. */
+  async send(action, extra = {}) {
+    try {
       S.error = null;
-      this.ws.send(JSON.stringify(msg));
+      const res = await fetch('/api/game', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, code: S.code, token: this.token, ...extra }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      apply(body);
+      S.connected = true;
+      this.schedule();
+      return body;
+    } catch (err) {
+      S.error = err.message;
+      ui.busy = false;
+      ui.rolling = false;
+      render();
+      return null;
     }
   },
 };
+
+/** Fold a server payload into local state and redraw. */
+function apply(body) {
+  if (body.role) S.role = body.role;
+  if (body.ephemeral !== undefined) S.ephemeral = body.ephemeral;
+
+  const prev = S.state?.mark;
+  S.state = body.state;
+  S.me = body.me ?? null;
+
+  if (prev !== undefined && body.state.mark !== prev) {
+    ui.markFlash = body.state.mark > prev ? 'flash-up' : 'flash-down';
+    setTimeout(() => { ui.markFlash = null; render(); }, 750);
+  }
+
+  // Clear the ticket when the round turns over, and only then — polling redraws
+  // constantly, and wiping on each tick would erase a quantity being typed.
+  if (ui.lastRound !== null && ui.lastRound !== body.state.round) {
+    ui.qty = '';
+    ui.cards = { up: 0, down: 0, multiply: 0, add: 0 };
+  }
+  ui.lastRound = body.state.round;
+
+  ui.rolling = false;
+  render();
+}
 
 // --- Actions ---------------------------------------------------------------
 
@@ -151,20 +196,22 @@ const act = {
   setType(t) { ui.orderType = t; render(); },
   setQty(v) { ui.qty = v.replace(/[^0-9]/g, ''); },
 
-  submitOrder() {
+  async submitOrder() {
     const mag = parseInt(ui.qty || '0', 10);
     if (!Number.isFinite(mag) || mag < 0) { S.error = 'Enter a quantity'; return render(); }
     const qty = ui.side === 'SELL' ? -mag : mag;
-    net.send({ type: 'order', qty, orderType: ui.orderType });
-    net.send({ type: 'confirmOrder' });
+    if (await net.send('order', { qty, orderType: ui.orderType })) {
+      await net.send('confirmOrder');
+    }
   },
 
-  passOrder() {
-    net.send({ type: 'order', qty: 0, orderType: 'LIMIT' });
-    net.send({ type: 'confirmOrder' });
+  async passOrder() {
+    if (await net.send('order', { qty: 0, orderType: 'LIMIT' })) {
+      await net.send('confirmOrder');
+    }
   },
 
-  unconfirmOrder() { net.send({ type: 'unconfirmOrder' }); },
+  unconfirmOrder() { net.send('unconfirmOrder'); },
 
   bumpCard(kind, delta) {
     const held = S.me?.hand?.[kind] ?? 0;
@@ -172,30 +219,31 @@ const act = {
     render();
   },
 
-  submitCards() {
-    net.send({ type: 'cards', cards: ui.cards });
-    net.send({ type: 'confirmCards' });
+  async submitCards() {
+    if (await net.send('cards', { cards: ui.cards })) {
+      await net.send('confirmCards');
+    }
   },
 
-  unconfirmCards() { net.send({ type: 'unconfirmCards' }); },
+  unconfirmCards() { net.send('unconfirmCards'); },
 
   roll() {
     ui.rolling = true;
     render();
-    setTimeout(() => net.send({ type: 'roll' }), 420);   // let the tumble register
+    setTimeout(() => net.send('roll'), 420);   // let the tumble register
   },
 
-  start() { net.send({ type: 'start' }); },
-  force() { net.send({ type: 'force' }); },
+  start() { net.send('start'); },
+  force() { net.send('force'); },
   reset() {
     if (confirm('Reset the game? Every position and hand is wiped. Seats stay.')) {
-      net.send({ type: 'reset' });
+      net.send('reset');
     }
   },
   kick(playerId, name) {
-    if (confirm(`Remove ${name} from the table?`)) net.send({ type: 'kick', playerId });
+    if (confirm(`Remove ${name} from the table?`)) net.send('kick', { playerId });
   },
-  config(patch) { net.send({ type: 'config', config: patch }); },
+  config(patch) { return net.send('config', { config: patch }); },
 
   copy(text, label) {
     navigator.clipboard?.writeText(text).then(() => {
@@ -227,7 +275,15 @@ function topbar(extra = '') {
 }
 
 function alerts() {
+  // On serverless with no Redis, consecutive requests can hit different
+  // instances holding different games. Say so rather than let the table behave
+  // like it is haunted.
+  const ephemeral = S.ephemeral && location.hostname !== 'localhost'
+    ? `<div class="err">No datastore connected — tables will not survive between
+       requests here. Add a Redis integration in the Vercel project settings.</div>`
+    : '';
   return `
+    ${ephemeral}
     ${S.error ? `<div class="err">${esc(S.error)}</div>` : ''}
     ${S.notice ? `<div class="ok">${esc(S.notice)}</div>` : ''}`;
 }
@@ -277,9 +333,7 @@ function waitingPills(st, list) {
   if (!st.standings.length) return '<span class="dim">No players seated</span>';
   return `<div class="waiting">${st.standings.map((p) => {
     const late = list.includes(p.name);
-    const k = !p.connected ? 'gone' : late ? 'late' : 'ready';
-    const mark = !p.connected ? '∅' : late ? '·' : '✓';
-    return `<span class="pill ${k}">${mark} ${esc(p.name)}</span>`;
+    return `<span class="pill ${late ? 'late' : 'ready'}">${late ? '·' : '✓'} ${esc(p.name)}</span>`;
   }).join('')}</div>`;
 }
 
@@ -287,7 +341,7 @@ function standingsTable(st, opts = {}) {
   const rows = st.standings.map((p, i) => `
     <tr class="${opts.meId === p.id ? 'me' : ''}">
       <td class="num dim">${i + 1}</td>
-      <td class="strong">${esc(p.name)}${p.connected ? '' : ' <span class="grey tiny">OFF</span>'}</td>
+      <td class="strong">${esc(p.name)}</td>
       <td class="num ${cls(p.shares)}">${signed(p.shares)}</td>
       <td class="num dim">${p.avgPrice === null ? '—' : px(p.avgPrice)}</td>
       <td class="num strong ${cls(p.pl)}">${money(p.pl)}</td>
@@ -429,11 +483,15 @@ function renderHome() {
   document.getElementById('createBtn').onclick = async () => {
     ui.busy = true; render();
     try {
-      const res = await fetch('/api/games', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      if (!res.ok) throw new Error('Could not open a table');
-      const { code: newCode, hostToken } = await res.json();
-      store.setHostToken(newCode, hostToken);
-      location.href = `/${newCode}#host`;
+      const res = await fetch('/api/game', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create' }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? 'Could not open a table');
+      store.setHostToken(body.code, body.hostToken);
+      location.href = `/${body.code}#host`;
     } catch (err) {
       S.error = err.message;
       ui.busy = false;
@@ -474,11 +532,12 @@ function renderJoin() {
   input.onkeydown = (e) => { if (e.key === 'Enter') sit(); };
   input.focus();
 
-  const sit = () => {
+  const sit = async () => {
     if (!ui.name.trim()) { S.error = 'Name required'; return render(); }
-    net.connect({ role: 'player', code: S.code, name: ui.name.trim() });
-    S.role = 'player';
-    render();
+    const res = await net.send('join', { name: ui.name.trim() });
+    if (!res) return;
+    store.setPlayerToken(S.code, res.playerToken);
+    net.start(res.playerToken);
   };
   document.getElementById('sit').onclick = sit;
 }
@@ -988,36 +1047,43 @@ function route() {
 
   S.code = path;
 
+  // The token alone tells the server who you are; the hash only decides which
+  // screen this device wants when it holds no seat.
   if (hash === 'host') {
     const t = store.hostToken(path);
     if (!t) {
-      S.error = 'No host credentials for this table on this device. Open it from the machine that created it, or run the dashboard instead.';
+      S.error = 'No host credentials for this table on this device. Open it from the machine that created it, or use the dashboard instead.';
       S.role = 'dashboard';
-      net.connect({ role: 'dashboard', code: path });
+      net.start(null);
       return render();
     }
     S.role = 'host';
-    net.connect({ role: 'host', code: path, hostToken: t });
+    net.start(t);
     return render();
   }
 
   if (hash === 'dashboard') {
     S.role = 'dashboard';
-    net.connect({ role: 'dashboard', code: path });
+    net.start(null);
     return render();
   }
 
-  // Player: reconnect silently if this device already has a seat.
-  const token = store.playerToken(path);
-  if (token) {
+  // Player: rejoin silently if this device already holds a seat.
+  const seat = store.playerToken(path);
+  if (seat) {
     S.role = 'player';
-    net.connect({ role: 'player', code: path, playerToken: token });
+    net.start(seat);
     return render();
   }
 
   S.role = null;   // prompt for a name
   render();
 }
+
+// Polling pauses on a hidden tab; catch up the moment it comes back.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && S.code && net.timer) net.start();
+});
 
 window.addEventListener('hashchange', () => location.reload());
 route();
