@@ -1,0 +1,16 @@
+{
+  "name": "mooncoin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mooncoin — a multiplayer market-making game with square-root price impact",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test server/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
