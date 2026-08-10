@@ -77,10 +77,21 @@ export function deal(numPlayers, cardQty, rng = Math.random, perType = DEFAULTS.
 /**
  * Aggregate the round's orders into the book display.  Terminal!B20:E20.
  *
- * Orders carry no limit price — only a signed quantity and a type. LIMIT means
- * "passive: rest, don't move the print". MARKET means "aggressive: guaranteed
- * fill, pay the impact". Only market flow enters the imbalance (Terminal!E7),
- * so resting liquidity never moves the price on its own.
+ * Orders carry no limit price — only a signed quantity and a type. A limit
+ * order is resting liquidity at the last sale: marketable, but unwilling to
+ * chase. A market order demands immediacy at whatever the round clears at.
+ *
+ * Market orders net against each other first, and whatever pressure survives
+ * is met by the resting orders facing it. Only what the resting book cannot
+ * absorb becomes imbalance, and only imbalance moves the price:
+ *
+ *   pressure  = market buys - market sells
+ *   resting   = limit orders facing that pressure (offers if buying, bids if selling)
+ *   absorbed  = min(|pressure|, resting)
+ *   imbalance = sign(pressure) * (|pressure| - absorbed)
+ *
+ * Resting orders on the same side as the pressure are not marketable — nobody
+ * is selling at last sale into a bid — so they neither absorb nor trade.
  */
 export function aggregateOrders(orders) {
   let limitBid = 0, limitOffer = 0, marketBid = 0, marketOffer = 0;
@@ -93,7 +104,13 @@ export function aggregateOrders(orders) {
       if (qty > 0) marketBid += qty; else marketOffer += -qty;
     }
   }
-  return { limitBid, limitOffer, marketBid, marketOffer, imbalance: marketBid - marketOffer };
+
+  const pressure = marketBid - marketOffer;
+  const resting = pressure > 0 ? limitOffer : pressure < 0 ? limitBid : 0;
+  const absorbed = Math.min(Math.abs(pressure), resting);
+  const imbalance = Math.sign(pressure) * (Math.abs(pressure) - absorbed);
+
+  return { limitBid, limitOffer, marketBid, marketOffer, pressure, absorbed, imbalance };
 }
 
 /**
@@ -129,49 +146,43 @@ function proRata(wants, available) {
 }
 
 /**
- * Match the round and produce a fill per player, all at the single print price.
+ * Match the round and produce a fill per player, all at the single clearing price.
  *
  * Market orders always fill in full — that certainty is what the square-root
- * slippage buys. Limit orders only trade against opposing market flow, pro-rata
- * when the market side is too small to satisfy everyone, and the house absorbs
- * whatever market volume the resting side could not cover.
+ * slippage buys. Resting orders facing the pressure fill only up to what the
+ * round needed from them, pro-rata when more is offered than required. Resting
+ * orders on the same side as the pressure are not marketable and do not trade.
+ * The house is left holding whatever the players did not net out among
+ * themselves, which is the imbalance by construction.
  */
 export function matchOrders(orders, lastMark) {
   const book = aggregateOrders(orders);
   const price = printPrice(lastMark, book.imbalance);
 
-  const limitBuys = orders.filter((o) => o.type === 'LIMIT' && o.qty > 0);
-  const limitSells = orders.filter((o) => o.type === 'LIMIT' && o.qty < 0);
+  // Only the resting side facing the pressure is marketable this round.
+  const facing = book.pressure > 0
+    ? orders.filter((o) => o.type === 'LIMIT' && o.qty < 0)
+    : book.pressure < 0
+      ? orders.filter((o) => o.type === 'LIMIT' && o.qty > 0)
+      : [];
 
-  // Limit sellers are hit by market buyers; limit buyers are lifted by market sellers.
-  const sellAlloc = proRata(limitSells.map((o) => -o.qty), book.marketBid);
-  const buyAlloc = proRata(limitBuys.map((o) => o.qty), book.marketOffer);
+  const alloc = new Map();
+  const shares = proRata(facing.map((o) => Math.abs(o.qty)), book.absorbed);
+  facing.forEach((o, i) => alloc.set(o, shares[i] * Math.sign(o.qty)));
 
   const fills = [];
   for (const o of orders) {
     const qty = Number(o.qty) || 0;
     if (qty === 0) continue;
-    let filled;
-    if (o.type === 'MARKET') {
-      filled = qty;
-    } else if (qty > 0) {
-      filled = buyAlloc[limitBuys.indexOf(o)];
-    } else {
-      filled = -sellAlloc[limitSells.indexOf(o)];
-    }
+    const filled = o.type === 'MARKET' ? qty : (alloc.get(o) ?? 0);
     if (filled !== 0) fills.push({ playerId: o.playerId, qty: filled, price });
   }
-
-  // Whatever the players do not net out among themselves, the house is on the
-  // other side of. Counting unmatched market volume directly would double-count
-  // opposing market orders, which satisfy each other before the house is needed.
-  const net = fills.reduce((a, f) => a + f.qty, 0);
 
   return {
     ...book,
     price,
     fills,
-    houseResidual: Math.abs(net),
+    houseResidual: Math.abs(fills.reduce((a, f) => a + f.qty, 0)),
   };
 }
 

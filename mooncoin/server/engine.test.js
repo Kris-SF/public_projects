@@ -57,7 +57,7 @@ test('size is self-limiting', () => {
 
 // --- Book aggregation ------------------------------------------------------
 
-test('limit orders stay out of the imbalance', () => {
+test('resting liquidity alone creates no pressure', () => {
   const book = aggregateOrders([
     { playerId: 'a', qty: 10, type: 'LIMIT' },
     { playerId: 'b', qty: -10, type: 'LIMIT' },
@@ -67,45 +67,130 @@ test('limit orders stay out of the imbalance', () => {
   assert.equal(book.imbalance, 0);
 });
 
-test('imbalance is market flow only', () => {
+test('resting offers absorb buying pressure exactly', () => {
+  // 5 to buy at market, 5 resting to sell — the sellers cover it, nothing moves.
   const book = aggregateOrders([
-    { playerId: 'a', qty: 7, type: 'MARKET' },
-    { playerId: 'b', qty: -2, type: 'MARKET' },
-    { playerId: 'c', qty: 50, type: 'LIMIT' },
+    { playerId: 'a', qty: 5, type: 'MARKET' },
+    { playerId: 'b', qty: -5, type: 'LIMIT' },
   ]);
-  assert.equal(book.marketBid, 7);
-  assert.equal(book.marketOffer, 2);
-  assert.equal(book.imbalance, 5);
+  assert.equal(book.pressure, 5);
+  assert.equal(book.absorbed, 5);
+  assert.equal(book.imbalance, 0);
+});
+
+test('what the resting book cannot cover becomes imbalance', () => {
+  // Same 5 to buy, but only 2 resting to sell — 3 is left wanting.
+  const book = aggregateOrders([
+    { playerId: 'a', qty: 5, type: 'MARKET' },
+    { playerId: 'b', qty: -2, type: 'LIMIT' },
+  ]);
+  assert.equal(book.absorbed, 2);
+  assert.equal(book.imbalance, 3);
+  assert.equal(printPrice(100, book.imbalance), 102);   // ceil(sqrt(3)) = 2
+});
+
+test('resting orders on the pressure side are not marketable', () => {
+  // 10 to buy at market and 10 more resting to buy. Nobody is selling at last
+  // sale into that, so the resting bid absorbs nothing.
+  const book = aggregateOrders([
+    { playerId: 'a', qty: 10, type: 'MARKET' },
+    { playerId: 'b', qty: 10, type: 'LIMIT' },
+  ]);
+  assert.equal(book.limitBid, 10);
+  assert.equal(book.absorbed, 0);
+  assert.equal(book.imbalance, 10);
+});
+
+test('market orders net before the resting book is called on', () => {
+  // 10 to buy market, 3 to sell market, 5 resting to sell.
+  const book = aggregateOrders([
+    { playerId: 'a', qty: 10, type: 'MARKET' },
+    { playerId: 'b', qty: -3, type: 'MARKET' },
+    { playerId: 'c', qty: -5, type: 'LIMIT' },
+  ]);
+  assert.equal(book.pressure, 7);
+  assert.equal(book.absorbed, 5);
+  assert.equal(book.imbalance, 2);
+});
+
+test('surplus resting liquidity cannot flip the price', () => {
+  // 5 to buy against 30 resting to sell: the imbalance floors at zero rather
+  // than turning negative and ticking the price down.
+  const book = aggregateOrders([
+    { playerId: 'a', qty: 5, type: 'MARKET' },
+    { playerId: 'b', qty: -30, type: 'LIMIT' },
+  ]);
+  assert.equal(book.absorbed, 5);
+  assert.equal(book.imbalance, 0);
 });
 
 // --- Matching --------------------------------------------------------------
 
-test('market orders always fill; house absorbs the residual', () => {
+test('a fully covered market order prints flat', () => {
+  const r = matchOrders([
+    { playerId: 'buyer', qty: 5, type: 'MARKET' },
+    { playerId: 'seller', qty: -5, type: 'LIMIT' },
+  ], 100);
+
+  assert.equal(r.price, 100, 'the resting offer covered it, so nothing moved');
+  assert.equal(r.fills.find((f) => f.playerId === 'buyer').qty, 5);
+  assert.equal(r.fills.find((f) => f.playerId === 'seller').qty, -5);
+  assert.equal(r.houseResidual, 0);
+});
+
+test('market orders always fill; house takes what is left', () => {
   const r = matchOrders([
     { playerId: 'buyer', qty: 5, type: 'MARKET' },
     { playerId: 'seller', qty: -3, type: 'LIMIT' },
   ], 100);
 
-  assert.equal(r.price, 103);                       // ceil(sqrt(5)) = 3
-  const buyer = r.fills.find((f) => f.playerId === 'buyer');
-  const seller = r.fills.find((f) => f.playerId === 'seller');
-  assert.equal(buyer.qty, 5);                       // full fill, certainty bought with slippage
-  assert.equal(seller.qty, -3);                     // resting size was all it had
+  assert.equal(r.price, 102);                       // imbalance 3, ceil(sqrt(3)) = 2
+  assert.equal(r.fills.find((f) => f.playerId === 'buyer').qty, 5);
+  assert.equal(r.fills.find((f) => f.playerId === 'seller').qty, -3);
   assert.equal(r.houseResidual, 2);
-  for (const f of r.fills) assert.equal(f.price, 103);
+  for (const f of r.fills) assert.equal(f.price, 102);
 });
 
-test('limit orders fill pro-rata against opposing market flow', () => {
+test('a resting order on the pressure side does not trade', () => {
+  const r = matchOrders([
+    { playerId: 'mkt', qty: 10, type: 'MARKET' },
+    { playerId: 'rest', qty: 10, type: 'LIMIT' },
+  ], 100);
+
+  assert.equal(r.price, 104);                       // ceil(sqrt(10)) = 4
+  assert.equal(r.fills.find((f) => f.playerId === 'mkt').qty, 10);
+  assert.equal(r.fills.find((f) => f.playerId === 'rest'), undefined);
+  assert.equal(r.houseResidual, 10);
+});
+
+test('everyone fills at the clearing price', () => {
+  // 10 to buy market, 5 resting to sell, 3 to sell market -> imbalance +2.
+  const r = matchOrders([
+    { playerId: 'buyer', qty: 10, type: 'MARKET' },
+    { playerId: 'rester', qty: -5, type: 'LIMIT' },
+    { playerId: 'seller', qty: -3, type: 'MARKET' },
+  ], 100);
+
+  assert.equal(r.imbalance, 2);
+  assert.equal(r.price, 102);                       // ceil(sqrt(2)) = 2
+  assert.equal(r.fills.length, 3, 'everyone trades');
+  assert.equal(r.fills.find((f) => f.playerId === 'buyer').qty, 10);
+  assert.equal(r.fills.find((f) => f.playerId === 'rester').qty, -5);
+  assert.equal(r.fills.find((f) => f.playerId === 'seller').qty, -3);
+  for (const f of r.fills) assert.equal(f.price, 102);
+  assert.equal(r.houseResidual, 2);
+});
+
+test('oversubscribed resting orders fill pro-rata', () => {
   const r = matchOrders([
     { playerId: 'mkt', qty: 6, type: 'MARKET' },
     { playerId: 'l1', qty: -6, type: 'LIMIT' },
     { playerId: 'l2', qty: -6, type: 'LIMIT' },
   ], 100);
 
-  const l1 = r.fills.find((f) => f.playerId === 'l1');
-  const l2 = r.fills.find((f) => f.playerId === 'l2');
-  assert.equal(l1.qty, -3);
-  assert.equal(l2.qty, -3);
+  assert.equal(r.price, 100, 'twelve offered covers six wanted');
+  assert.equal(r.fills.find((f) => f.playerId === 'l1').qty, -3);
+  assert.equal(r.fills.find((f) => f.playerId === 'l2').qty, -3);
   assert.equal(r.houseResidual, 0);
 });
 
@@ -120,8 +205,20 @@ test('pro-rata allocation never conjures or loses shares', () => {
   const limitTotal = r.fills
     .filter((f) => f.playerId.startsWith('l'))
     .reduce((a, f) => a + f.qty, 0);
-  assert.equal(limitTotal, -10);   // exactly the market buy volume
+  assert.equal(limitTotal, -10);   // exactly what the round needed
   assert.equal(r.houseResidual, 0);
+});
+
+test('resting bids absorb selling pressure the same way', () => {
+  const r = matchOrders([
+    { playerId: 'seller', qty: -9, type: 'MARKET' },
+    { playerId: 'rester', qty: 4, type: 'LIMIT' },
+  ], 100);
+
+  assert.equal(r.imbalance, -5);
+  assert.equal(r.price, 97);                        // 100 - ceil(sqrt(5))
+  assert.equal(r.fills.find((f) => f.playerId === 'rester').qty, 4);
+  assert.equal(r.houseResidual, 5);
 });
 
 test('opposing market orders satisfy each other before the house', () => {
@@ -135,19 +232,23 @@ test('opposing market orders satisfy each other before the house', () => {
   assert.equal(r.houseResidual, 5, 'the four that crossed need no house');
 });
 
-test('house residual always equals the unmatched net', () => {
+test('house residual is always exactly the imbalance', () => {
   const books = [
     [['a', 4, 'MARKET'], ['b', -4, 'LIMIT']],
     [['a', 5, 'MARKET'], ['b', -3, 'LIMIT']],
     [['a', 9, 'MARKET'], ['b', -4, 'MARKET']],
     [['a', 6, 'MARKET'], ['b', 6, 'MARKET'], ['c', -4, 'LIMIT']],
     [['a', 20, 'LIMIT'], ['b', -20, 'LIMIT']],
+    [['a', 10, 'MARKET'], ['b', -3, 'MARKET'], ['c', -5, 'LIMIT']],
+    [['a', 10, 'MARKET'], ['b', 10, 'LIMIT']],
+    [['a', -9, 'MARKET'], ['b', 4, 'LIMIT'], ['c', -2, 'LIMIT']],
   ];
   for (const spec of books) {
     const orders = spec.map(([playerId, qty, type]) => ({ playerId, qty, type }));
     const r = matchOrders(orders, 100);
     const net = r.fills.reduce((a, f) => a + f.qty, 0);
     assert.equal(r.houseResidual, Math.abs(net), JSON.stringify(spec));
+    assert.equal(r.houseResidual, Math.abs(r.imbalance), JSON.stringify(spec));
   }
 });
 

@@ -131,10 +131,13 @@ test('a full game runs over websockets', async () => {
   bob.send({ type: 'confirmOrder' });
   await waitFor(() => alice.state?.phase === 'cards', 'orders gate to trip');
 
-  assert.equal(alice.state.reveal.price, 102);       // 100 + ceil(sqrt(4))
-  assert.equal(alice.state.reveal.imbalance, 4);
+  // Bob's resting offer covers Alice's demand exactly, so the print is flat.
+  assert.equal(alice.state.reveal.absorbed, 4);
+  assert.equal(alice.state.reveal.imbalance, 0);
+  assert.equal(alice.state.reveal.price, 100);
+  assert.equal(alice.state.reveal.houseResidual, 0);
   await waitFor(() => alice.me?.fills.length === 1, 'blotter written by the engine');
-  assert.equal(alice.me.fills[0].price, 102);
+  assert.equal(alice.me.fills[0].price, 100);
   assert.equal(alice.me.fills[0].qty, 4);
 
   // Cards

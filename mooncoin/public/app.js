@@ -535,8 +535,8 @@ function orderTicket(st, me) {
       </div>
       <p class="dim tiny" style="margin:0 0 8px">
         ${ui.orderType === 'MARKET'
-          ? 'Market fills for certain and pays √imbalance in impact.'
-          : 'Limit rests. It moves nothing and only trades if market flow comes the other way.'}
+          ? 'Market fills for certain and pays √imbalance in impact — less whatever the resting book absorbs.'
+          : 'Limit rests at last sale. It soaks up pressure coming the other way and fills at the clearing price, or does not fill at all.'}
       </p>
       <div class="split">
         <button id="pass">Pass</button>
@@ -776,6 +776,7 @@ function renderDashboard(hostMode = false) {
   const book = st.reveal ?? (last ? {
     limitBid: last.limitBid, marketBid: last.marketBid, imbalance: last.imbalance,
     marketOffer: last.marketOffer, limitOffer: last.limitOffer,
+    pressure: last.pressure, absorbed: last.absorbed,
     price: last.print, houseResidual: last.houseResidual,
   } : null);
   const bookRound = liveBook ? st.round : last?.round;
@@ -856,9 +857,11 @@ function renderDashboard(hostMode = false) {
                 : 'sealed until the gate trips'}</span>
             </header>
             ${ladder(book)}
-            ${book?.houseResidual > 0
-              ? `<div class="body dim tiny">House absorbed ${book.houseResidual} — resting book could not cover the market flow</div>`
-              : ''}
+            ${book ? `<div class="body dim tiny">
+              Pressure ${signed(book.pressure ?? 0)} · book absorbed ${book.absorbed ?? 0} ·
+              imbalance ${signed(book.imbalance)} · slippage ${signed(impactOf(book.imbalance))}
+              ${book.houseResidual > 0 ? `· house left holding ${book.houseResidual}` : '· fully matched'}
+            </div>` : ''}
           </div>
 
           ${dice ? `

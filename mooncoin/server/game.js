@@ -308,6 +308,8 @@ function settleRound(game) {
     imbalance: game.reveal.imbalance,
     marketOffer: game.reveal.marketOffer,
     limitOffer: game.reveal.limitOffer,
+    pressure: game.reveal.pressure,
+    absorbed: game.reveal.absorbed,
     print: game.reveal.price,
     houseResidual: game.reveal.houseResidual,
     regime: game.net.regime,

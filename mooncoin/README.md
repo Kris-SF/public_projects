@@ -52,24 +52,37 @@ what they confirmed is not.
 
 Orders carry no limit price — only a signed quantity and a type:
 
-- **MARKET** — guaranteed fill, pays the impact
-- **LIMIT** — rests, moves nothing, and only trades if market flow comes the
-  other way
+- **MARKET** — demands immediacy, always fills, pays the impact
+- **LIMIT** — rests at the last sale, absorbs pressure coming the other way, and
+  fills at the clearing price or not at all
 
-Only market flow enters the imbalance, so resting liquidity never moves the price
-on its own.
+Market orders net against each other first. Whatever pressure survives is met by
+the resting orders facing it, and only what the book cannot absorb moves the
+price:
 
 ```
-imbalance = market bid - market offer
-print     = last mark + sign(imbalance) * ceil(sqrt(|imbalance|))
+pressure  = market buys - market sells
+resting   = limit orders facing that pressure (offers if buying, bids if selling)
+absorbed  = min(|pressure|, resting)
+imbalance = sign(pressure) * (|pressure| - absorbed)
+
+print = last mark + sign(imbalance) * ceil(sqrt(|imbalance|))
 ```
+
+Everyone who trades that round trades at that one price — a single-price call
+auction, not a ladder.
+
+A resting order on the *same* side as the pressure is not marketable: nobody
+sells at last sale into a bid. It absorbs nothing and does not trade. So ten to
+buy at market plus ten more resting to buy is still an imbalance of ten.
 
 Square-root impact is the whole governor on size. There is no position limit and
-none is needed: a 100-lot market order moves the print ten points against itself.
+none is needed: a 100-lot market order into an empty book moves the print ten
+points against itself.
 
-Market orders always fill in full — that certainty is what the slippage buys.
-Limit orders fill pro-rata against opposing market flow, and the house absorbs
-whatever the resting book could not cover.
+Resting orders fill pro-rata when more is offered than the round needed. The
+house takes the other side of the imbalance, which is by construction whatever
+the players did not net out among themselves.
 
 ## The dice
 

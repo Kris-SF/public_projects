@@ -206,13 +206,17 @@ test('a full game settles P/L consistently', () => {
   const { g, players } = tableOf(['buyer', 'seller'], { maxRounds: 2 });
   const [buyer, seller] = players;
 
-  // Round 1: buyer lifts 4 at market, seller rests 4.
-  submitOrder(g, buyer.id, { qty: 4, type: 'MARKET' });
+  // Round 1: buyer takes 5 at market, seller only rests 3 — two go uncovered.
+  submitOrder(g, buyer.id, { qty: 5, type: 'MARKET' });
   confirmOrder(g, buyer.id);
-  submitOrder(g, seller.id, { qty: -4, type: 'LIMIT' });
+  submitOrder(g, seller.id, { qty: -3, type: 'LIMIT' });
   confirmOrder(g, seller.id);
 
-  assert.equal(g.reveal.price, 102);     // 100 + ceil(sqrt(4))
+  assert.equal(g.reveal.absorbed, 3);
+  assert.equal(g.reveal.imbalance, 2);
+  assert.equal(g.reveal.price, 102);     // 100 + ceil(sqrt(2))
+  assert.equal(g.reveal.houseResidual, 2);
+
   for (const p of players) confirmCards(g, p.id);
   roll(g, [4, 5, 5, 3]);                 // +15 -> mark 115
 
@@ -220,11 +224,12 @@ test('a full game settles P/L consistently', () => {
   const s = standings(g);
   const b = s.find((x) => x.name === 'BUYER');
   const l = s.find((x) => x.name === 'SELLER');
-  assert.equal(b.shares, 4);
-  assert.equal(b.pl, (115 - 102) * 4);   // 52
-  assert.equal(l.shares, -4);
-  assert.equal(l.pl, -52);
-  assert.equal(b.pl + l.pl, 0, 'zero sum against the house at a flat print');
+  assert.equal(b.shares, 5);
+  assert.equal(b.pl, (115 - 102) * 5);   // 65
+  assert.equal(l.shares, -3);
+  assert.equal(l.pl, -39);
+  // Not zero-sum: the house is short the 2 it had to supply, and wears the loss.
+  assert.equal(b.pl + l.pl, (115 - 102) * 2);
 
   // Round 2 to the buzzer.
   for (const p of players) {
