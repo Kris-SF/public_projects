@@ -48,9 +48,26 @@ const money = (n) => {
 
 const px = (n, d = 2) => (n === null || n === undefined ? '—' : Number(n).toFixed(d));
 
+const seatKey = (code) => `mooncoin:player:${code}`;
+
 const store = {
-  playerToken: (code) => localStorage.getItem(`mooncoin:player:${code}`),
-  setPlayerToken: (code, t) => localStorage.setItem(`mooncoin:player:${code}`, t),
+  /**
+   * Seat lookup checks this tab first, then the browser.
+   *
+   * sessionStorage is per-tab, so two tabs in one browser can hold two
+   * different seats — which is what makes testing a table single-handed
+   * possible. localStorage is the fallback, and is what puts you back in your
+   * own seat after a closed tab, a reload, or a phone that went to sleep.
+   */
+  playerToken: (code) =>
+    sessionStorage.getItem(seatKey(code)) ?? localStorage.getItem(seatKey(code)),
+  setPlayerToken: (code, t) => {
+    sessionStorage.setItem(seatKey(code), t);
+    localStorage.setItem(seatKey(code), t);
+  },
+  /** Forget this tab's seat only, leaving other tabs undisturbed. */
+  forgetSeatInThisTab: (code) => sessionStorage.removeItem(seatKey(code)),
+
   hostToken: (code) => localStorage.getItem(`mooncoin:host:${code}`),
   setHostToken: (code, t) => localStorage.setItem(`mooncoin:host:${code}`, t),
 };
@@ -778,6 +795,11 @@ function renderPlayer() {
           <header>Round History</header>
           ${historyTable(st)}
         </div>` : ''}
+
+      <div class="row" style="justify-content:center;padding:4px 0">
+        <span class="dim tiny">Seated as ${esc(me.name)}</span>
+        <a class="dim tiny" href="/${esc(st.code)}?new=1">Join as someone else</a>
+      </div>
     </div>`;
 
   wirePlayer();
@@ -885,6 +907,11 @@ function renderDashboard(hostMode = false) {
           <button id="copyJoin">Copy join link</button>
           <button id="openDash">Open dashboard</button>
           <button class="danger" id="reset">Reset</button>
+        </div>
+        <div class="row">
+          ${/* One browser holds one seat per tab, so testing solo needs the ?new form. */ ''}
+          <button id="addSeat">Open an extra seat</button>
+          <span class="dim tiny">opens a tab that takes its own seat — for testing a table single-handed</span>
         </div>
       </div>
     </div>` : '';
@@ -1003,6 +1030,7 @@ function wireHost(st, joinUrl) {
   on('reset', act.reset);
   on('copyJoin', () => act.copy(joinUrl, 'Join link'));
   on('openDash', () => window.open(`/${st.code}#dashboard`, '_blank'));
+  on('addSeat', () => window.open(`/${st.code}?new=1`, '_blank'));
 
   document.querySelectorAll('[data-kick]').forEach((b) => {
     b.onclick = () => act.kick(b.dataset.kick, b.dataset.name);
@@ -1068,7 +1096,17 @@ function route() {
     return render();
   }
 
-  // Player: rejoin silently if this device already holds a seat.
+  // ?new forces a fresh seat: this tab forgets whatever it held and asks for a
+  // name. Lets one browser hold several players, and covers handing a phone to
+  // somebody else mid-game.
+  if (new URLSearchParams(location.search).has('new')) {
+    store.forgetSeatInThisTab(path);
+    history.replaceState(null, '', `/${path}`);   // so a reload does not re-prompt
+    S.role = null;
+    return render();
+  }
+
+  // Player: rejoin silently if this tab or browser already holds a seat.
   const seat = store.playerToken(path);
   if (seat) {
     S.role = 'player';
