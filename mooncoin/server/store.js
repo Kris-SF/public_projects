@@ -11,15 +11,48 @@
  * so the UI can say so out loud rather than behaving strangely.
  */
 
+// Hosting integrations have shipped these under several names over time, and
+// some prefix them per-store. Rather than chase the list, detect anything
+// Upstash-shaped: a REST URL and a matching write token.
 const URL_ENV = ['KV_REST_API_URL', 'UPSTASH_REDIS_REST_URL', 'REDIS_REST_URL'];
 const TOKEN_ENV = ['KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_TOKEN', 'REDIS_REST_TOKEN'];
 
-const pick = (names) => names.map((n) => process.env[n]).find(Boolean);
+const named = (names) => names.find((n) => process.env[n]);
 
-const REST_URL = pick(URL_ENV)?.replace(/\/$/, '');
-const REST_TOKEN = pick(TOKEN_ENV);
+function sniffUrl() {
+  return Object.keys(process.env).find((n) =>
+    /(KV|REDIS|UPSTASH).*REST.*URL/i.test(n) && /^https:\/\//.test(process.env[n] ?? ''));
+}
+
+function sniffToken() {
+  return Object.keys(process.env).find((n) =>
+    /(KV|REDIS|UPSTASH).*REST.*TOKEN/i.test(n)
+    && !/READ_ONLY/i.test(n)          // read-only tokens cannot write a game
+    && (process.env[n] ?? '').length > 8);
+}
+
+const URL_VAR = named(URL_ENV) ?? sniffUrl();
+const TOKEN_VAR = named(TOKEN_ENV) ?? sniffToken();
+
+const REST_URL = URL_VAR ? process.env[URL_VAR].replace(/\/$/, '') : undefined;
+const REST_TOKEN = TOKEN_VAR ? process.env[TOKEN_VAR] : undefined;
 
 export const configured = Boolean(REST_URL && REST_TOKEN);
+
+/**
+ * What the process can see, for diagnosing a store that will not connect.
+ * Variable NAMES only — values are never read out of here.
+ */
+export function describe() {
+  return {
+    configured,
+    urlVar: URL_VAR ?? null,
+    tokenVar: TOKEN_VAR ?? null,
+    visibleNames: Object.keys(process.env)
+      .filter((n) => /REDIS|KV_|UPSTASH/i.test(n))
+      .sort(),
+  };
+}
 
 const TTL_SECONDS = 12 * 60 * 60;   // a table abandoned for half a day is done
 const LOCK_MS = 4000;
