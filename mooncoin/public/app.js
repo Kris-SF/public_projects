@@ -15,6 +15,7 @@ const S = {
   error: null,
   notice: null,
   ephemeral: false,   // server has no Redis — state may not survive between requests
+  lastSignature: null,   // last payload rendered, so identical polls are no-ops
 };
 
 const ui = {
@@ -29,6 +30,17 @@ const ui = {
   lastMark: null,
   lastRound: null,
   markFlash: null,
+  // 'classic' is the original look; 'next' is the dense player screen and the
+  // big-board dashboard. Set with ?ui=next, and remembered so it survives the
+  // navigation between screens.
+  skin: (() => {
+    const q = new URLSearchParams(location.search).get('ui');
+    if (q === 'next' || q === 'classic') {
+      localStorage.setItem('mooncoin:skin', q);
+      return q;
+    }
+    return localStorage.getItem('mooncoin:skin') ?? 'classic';
+  })(),
 };
 
 // --- Utilities -------------------------------------------------------------
@@ -89,6 +101,38 @@ const PHASE_LABEL = {
 
 /** Impact preview, mirroring the server's printPrice. */
 const impactOf = (qty) => (qty === 0 ? 0 : Math.sign(qty) * Math.ceil(Math.sqrt(Math.abs(qty))));
+
+/**
+ * What the ticket costs, or earns.
+ *
+ * Everyone fills at the same print, so the number a market order pays away is
+ * the number a resting order collects. Same magnitude, opposite sign — which is
+ * why calling it slippage on a limit order is not just the wrong word but the
+ * wrong direction.
+ *
+ * The market side can be previewed exactly; the resting side cannot, because
+ * the edge depends on how much flow arrives. Shown symbolically rather than
+ * invented.
+ */
+function orderEconomics(st) {
+  const mag = parseInt(ui.qty || '0', 10) || 0;
+  const qty = ui.side === 'SELL' ? -mag : mag;
+
+  if (ui.orderType === 'MARKET') {
+    const slip = impactOf(qty);
+    return {
+      fillsLabel: 'Est. print', fillsValue: `${st.mark + slip}`, fillsNote: 'if alone',
+      costLabel: 'Your slippage', costValue: signed(slip),
+      costClass: slip === 0 ? 'dim' : 'down',
+      note: 'Fills for certain, and pays ceil(√imbalance) to do it. More flow the same way makes it worse, resting size on the other side makes it better.',
+    };
+  }
+  return {
+    fillsLabel: 'Fills at', fillsValue: `${st.mark}+`, fillsNote: 'or better',
+    costLabel: 'Your edge', costValue: '+√imb', costClass: 'up',
+    note: 'Rests at last sale and collects exactly what the takers pay — but your own size shrinks the imbalance you are collecting on. Rest less, earn more per share, fill less of it.',
+  };
+}
 
 // --- Socket ----------------------------------------------------------------
 
@@ -180,8 +224,19 @@ const net = {
   },
 };
 
-/** Fold a server payload into local state and redraw. */
+/**
+ * Fold a server payload into local state and redraw.
+ *
+ * Most poll ticks return exactly what the last one did. Redrawing anyway would
+ * tear down and rebuild every node a couple of times a second — which restarts
+ * animations, drops hover, and can pull a button out from under a tap that is
+ * already on its way down. So an unchanged payload leaves the DOM alone.
+ */
 function apply(body) {
+  const signature = JSON.stringify(body);
+  if (signature === S.lastSignature) return;
+  S.lastSignature = signature;
+
   if (body.role) S.role = body.role;
   if (body.ephemeral !== undefined) S.ephemeral = body.ephemeral;
 
@@ -262,6 +317,12 @@ const act = {
   },
   config(patch) { return net.send('config', { config: patch }); },
 
+  toggleSkin() {
+    ui.skin = ui.skin === 'next' ? 'classic' : 'next';
+    localStorage.setItem('mooncoin:skin', ui.skin);
+    render();
+  },
+
   copy(text, label) {
     navigator.clipboard?.writeText(text).then(() => {
       S.notice = `${label} copied`;
@@ -295,7 +356,8 @@ function alerts() {
   // On serverless with no Redis, consecutive requests can hit different
   // instances holding different games. Say so rather than let the table behave
   // like it is haunted.
-  const ephemeral = S.ephemeral && location.hostname !== 'localhost'
+  const local = ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
+  const ephemeral = S.ephemeral && !local
     ? `<div class="err">No datastore connected — tables will not survive between
        requests here. Add a Redis integration in the Vercel project settings.</div>`
     : '';
@@ -580,10 +642,7 @@ function orderTicket(st, me) {
       </div>`;
   }
 
-  const mag = parseInt(ui.qty || '0', 10) || 0;
-  const signedQty = ui.side === 'SELL' ? -mag : mag;
-  const slip = ui.orderType === 'MARKET' ? impactOf(signedQty) : 0;
-  const est = st.mark + slip;
+  const e = orderEconomics(st);
 
   return `
     <div class="body">
@@ -601,19 +660,15 @@ function orderTicket(st, me) {
       </div>
       <div class="tiles" style="border:1px solid var(--rule);margin-bottom:8px">
         <div class="readout">
-          <div class="label">${ui.orderType === 'MARKET' ? 'Est. Print' : 'Fills At'}</div>
-          <div class="value">${ui.orderType === 'MARKET' ? est : st.mark}<span class="dim" style="font-size:12px"> ${ui.orderType === 'MARKET' ? 'if alone' : 'or better'}</span></div>
+          <div class="label">${e.fillsLabel}</div>
+          <div class="value">${e.fillsValue}<span class="dim" style="font-size:12px"> ${e.fillsNote}</span></div>
         </div>
         <div class="readout">
-          <div class="label">Your Slippage</div>
-          <div class="value ${slip === 0 ? 'dim' : 'down'}">${ui.orderType === 'MARKET' ? signed(slip) : '0'}</div>
+          <div class="label">${e.costLabel}</div>
+          <div class="value ${e.costClass}">${e.costValue}</div>
         </div>
       </div>
-      <p class="dim tiny" style="margin:0 0 8px">
-        ${ui.orderType === 'MARKET'
-          ? 'Market fills for certain and pays √imbalance in impact — less whatever the resting book absorbs.'
-          : 'Limit rests at last sale. It soaks up pressure coming the other way and fills at the clearing price, or does not fill at all.'}
-      </p>
+      <p class="dim tiny" style="margin:0 0 8px">${e.note}</p>
       <div class="split">
         <button id="pass">Pass</button>
         <button class="primary" id="submitOrder">Confirm</button>
@@ -799,6 +854,7 @@ function renderPlayer() {
       <div class="row" style="justify-content:center;padding:4px 0">
         <span class="dim tiny">Seated as ${esc(me.name)}</span>
         <a class="dim tiny" href="/${esc(st.code)}?new=1">Join as someone else</a>
+        <button class="ghost tiny" id="skin">New layout</button>
       </div>
     </div>`;
 
@@ -834,6 +890,7 @@ function wirePlayer() {
   on('unconfirmOrder', act.unconfirmOrder);
   on('submitCards', act.submitCards);
   on('unconfirmCards', act.unconfirmCards);
+  on('skin', act.toggleSkin);
 }
 
 // --- Dashboard -------------------------------------------------------------
@@ -907,6 +964,7 @@ function renderDashboard(hostMode = false) {
           <button id="copyJoin">Copy join link</button>
           <button id="openDash">Open dashboard</button>
           <button class="danger" id="reset">Reset</button>
+          <button class="ghost" id="skin">New layout</button>
         </div>
         <div class="row">
           ${/* One browser holds one seat per tab, so testing solo needs the ?new form. */ ''}
@@ -1031,10 +1089,340 @@ function wireHost(st, joinUrl) {
   on('copyJoin', () => act.copy(joinUrl, 'Join link'));
   on('openDash', () => window.open(`/${st.code}#dashboard`, '_blank'));
   on('addSeat', () => window.open(`/${st.code}?new=1`, '_blank'));
+  on('skin', act.toggleSkin);
 
   document.querySelectorAll('[data-kick]').forEach((b) => {
     b.onclick = () => act.kick(b.dataset.kick, b.dataset.name);
   });
+}
+
+// ===========================================================================
+// NEXT SKIN
+//
+// Player: density over decoration. No inverse header bars — hierarchy comes
+// from thin rules and dim caps labels, the way a terminal actually does it,
+// which frees the one bright fill on screen to mean "this is what we are all
+// waiting for". Everything fits without scrolling.
+//
+// Dashboard: built to be read across a room. The mark and the imbalance carry
+// the size; the flow line under the ladder shows the arithmetic that produced
+// the print, so the table learns the mechanic while playing.
+// ===========================================================================
+
+/** Section divider: a rule, a dim label, and an optional right-hand status. */
+function rule(label, right = '') {
+  return `<div class="n-rule"><span>${label}</span><span>${right}</span></div>`;
+}
+
+function nextStrip(st, me) {
+  const cell = (label, value, klass = '') => `
+    <div><div class="n-lab">${label}</div><div class="n-v ${klass}">${value}</div></div>`;
+  return `
+    <div class="n-strip">
+      ${cell('Mark', st.mark, `am ${ui.markFlash ?? ''}`)}
+      ${cell('Position', signed(me.shares), cls(me.shares))}
+      ${cell('Avg', me.avgPrice === null ? '—' : px(me.avgPrice))}
+      ${cell('P/L', money(me.pl), cls(me.pl))}
+    </div>`;
+}
+
+function nextOrderTicket(st, me) {
+  if (me.ordersReady) {
+    const o = me.pendingOrder;
+    const side = o.qty > 0 ? 'BUY' : o.qty < 0 ? 'SELL' : 'PASS';
+    return `
+      <div class="n-act done">
+        <div class="n-done">
+          <span class="${o.qty > 0 ? 'up' : o.qty < 0 ? 'down' : 'dim'}">${side}</span>
+          ${o.qty === 0 ? '' : `<span class="strong">${Math.abs(o.qty)}</span><span class="dim">${o.type}</span>`}
+          <span class="spacer"></span>
+          <span class="dim tiny">In</span>
+        </div>
+        <button id="unconfirmOrder" class="wide">Pull it back</button>
+      </div>`;
+  }
+
+  const e = orderEconomics(st);
+  return `
+    <div class="n-act">
+      <div class="split">
+        <button class="buy ${ui.side === 'BUY' ? 'on' : ''}" data-side="BUY">Buy</button>
+        <button class="sell ${ui.side === 'SELL' ? 'on' : ''}" data-side="SELL">Sell</button>
+      </div>
+      <input id="qty" class="n-qty" inputmode="numeric" autocomplete="off"
+             placeholder="0" value="${esc(ui.qty)}" aria-label="Quantity">
+      <div class="split">
+        <button class="${ui.orderType === 'MARKET' ? 'on' : ''}" data-otype="MARKET">Market</button>
+        <button class="${ui.orderType === 'LIMIT' ? 'on' : ''}" data-otype="LIMIT">Limit</button>
+      </div>
+      <div class="n-econ">
+        <span>${e.fillsLabel} <b>${e.fillsValue}</b> <i>${e.fillsNote}</i></span>
+        <span>${e.costLabel} <b class="${e.costClass}">${e.costValue}</b></span>
+      </div>
+      <button class="primary n-go" id="submitOrder">Confirm</button>
+      <button id="pass" class="wide n-pass">Pass this round</button>
+      <p class="n-note">${e.note}</p>
+    </div>`;
+}
+
+function nextCardTicket(st, me) {
+  if (me.cardsReady) {
+    const c = me.pendingCards ?? { up: 0, down: 0, multiply: 0, add: 0 };
+    const total = Object.values(c).reduce((a, b) => a + b, 0);
+    return `
+      <div class="n-act done">
+        <div class="n-done">
+          <span class="strong">${total === 0
+            ? 'Holding everything'
+            : Object.entries(c).filter(([, n]) => n > 0).map(([k, n]) => `${n}${CARD_META[k].glyph}`).join('  ')}</span>
+          <span class="spacer"></span><span class="dim tiny">In</span>
+        </div>
+        <button id="unconfirmCards" class="wide">Take them back</button>
+      </div>`;
+  }
+
+  return `
+    <div class="n-act">
+      <div class="n-cards">
+        ${Object.keys(CARD_META).map((k) => {
+          const held = me.hand[k], picked = ui.cards[k] ?? 0;
+          return `
+            <div class="n-card ${k} ${held === 0 ? 'spent' : ''}">
+              <div class="g">${CARD_META[k].glyph}</div>
+              <div class="picked">${picked}</div>
+              <div class="held">${held - picked} left</div>
+              <div class="split">
+                <button data-card="${k}" data-delta="-1" ${picked === 0 ? 'disabled' : ''}>−</button>
+                <button data-card="${k}" data-delta="1" ${picked >= held ? 'disabled' : ''}>+</button>
+              </div>
+            </div>`;
+        }).join('')}
+      </div>
+      <button class="primary n-go" id="submitCards">Confirm cards</button>
+      <p class="n-note">↑↓ push the trend die, ×/+ the magnitude die. Three net cards
+        decides the direction outright; a fourth buys nothing. Spent either way.</p>
+    </div>`;
+}
+
+function renderPlayerNext() {
+  const st = S.state, me = S.me;
+  if (!st || !me) {
+    app.innerHTML = `${topbar()}<div class="n-wrap"><div class="banner wait blink">Connecting</div>${alerts()}</div>`;
+    return;
+  }
+
+  const rank = st.standings.findIndex((p) => p.id === me.id) + 1;
+  const last = st.history[st.history.length - 1];
+  const waiting = st.phase === 'orders' ? st.awaitingOrders
+    : st.phase === 'cards' ? st.awaitingCards : [];
+
+  let action, actionLabel, actionRight;
+  if (st.phase === 'lobby') {
+    action = `<div class="n-act"><div class="banner wait blink">Waiting for the host</div></div>`;
+    actionLabel = 'Lobby'; actionRight = `${st.seated} seated`;
+  } else if (st.phase === 'orders') {
+    action = nextOrderTicket(st, me);
+    actionLabel = `Order · round ${st.round}`;
+    actionRight = `${st.seated - waiting.length} of ${st.seated} in`;
+  } else if (st.phase === 'cards') {
+    action = nextCardTicket(st, me);
+    actionLabel = `Cards · round ${st.round}`;
+    actionRight = `${st.seated - waiting.length} of ${st.seated} in`;
+  } else if (st.phase === 'rolling') {
+    action = `<div class="n-act plain">${diceRow(st)}</div>`;
+    actionLabel = 'Dice';
+    actionRight = `${st.rollStep}/4 locked`;
+  } else {
+    const w = st.standings[0];
+    action = `<div class="n-act plain"><div class="banner">Market closed</div>
+      <div class="n-winner">${esc(w?.name ?? '—')} <span class="${cls(w?.pl ?? 0)}">${w ? money(w.pl) : ''}</span></div></div>`;
+    actionLabel = 'Final'; actionRight = `${st.maxRounds} rounds`;
+  }
+
+  app.innerHTML = `
+    ${topbar(`<span class="chip">${esc(me.name)}</span>`)}
+    <div class="n-wrap">
+      ${alerts()}
+      ${nextStrip(st, me)}
+      ${rule(actionLabel, actionRight)}
+      ${action}
+      ${waiting.length ? `<div class="n-waiting">Waiting on ${esc(waiting.join(', '))}</div>` : ''}
+
+      ${st.reveal ? `
+        ${rule(`Round ${st.round} book`, `printed ${st.reveal.price}`)}
+        ${ladder(st.reveal)}
+        <div class="n-flow">
+          Pressure ${signed(st.reveal.pressure ?? 0)} · book absorbed ${st.reveal.absorbed ?? 0} ·
+          imbalance ${signed(st.reveal.imbalance)} · print ${signed(impactOf(st.reveal.imbalance))}
+          <i>paid by takers, collected by resters</i>
+        </div>` : ''}
+
+      ${rule('Hand', `${me.hand.up + me.hand.down + me.hand.multiply + me.hand.add} left`)}
+      <div class="n-hand">
+        ${Object.keys(CARD_META).map((k) => `
+          <div class="n-card ${k} ${me.hand[k] === 0 ? 'spent' : ''}">
+            <div class="g">${CARD_META[k].glyph}</div><div class="held">${me.hand[k]}</div>
+          </div>`).join('')}
+      </div>
+
+      ${rule('Standings', `you are ${rank || '—'} of ${st.seated}`)}
+      ${standingsTable(st, { meId: me.id })}
+
+      ${rule('Blotter', `${me.fills.length} fills`)}
+      ${blotter(me)}
+
+      ${last ? `${rule('History', `${st.history.length} settled`)}${historyTable(st)}` : ''}
+
+      <div class="n-foot">
+        <span class="dim tiny">Seated as ${esc(me.name)}</span>
+        <a class="dim tiny" href="/${esc(st.code)}?new=1">Join as someone else</a>
+        <span class="spacer"></span>
+        <button class="ghost tiny" id="skin">Classic layout</button>
+      </div>
+    </div>`;
+
+  wirePlayer();
+  const sk = document.getElementById('skin');
+  if (sk) sk.onclick = act.toggleSkin;
+}
+
+function renderDashboardNext(hostMode = false) {
+  const st = S.state;
+  if (!st) {
+    app.innerHTML = `${topbar()}<div class="n-wrap"><div class="banner wait blink">Connecting</div>${alerts()}</div>`;
+    return;
+  }
+
+  const joinUrl = `${location.origin}/${st.code}`;
+  const gate = st.phase === 'orders' ? st.awaitingOrders : st.phase === 'cards' ? st.awaitingCards : [];
+  const last = st.history[st.history.length - 1];
+
+  const liveBook = !!st.reveal;
+  const book = st.reveal ?? (last ? {
+    limitBid: last.limitBid, marketBid: last.marketBid, imbalance: last.imbalance,
+    marketOffer: last.marketOffer, limitOffer: last.limitOffer,
+    pressure: last.pressure, absorbed: last.absorbed, price: last.print,
+  } : null);
+  const liveDice = st.dice.some((d) => d !== null);
+  const dice = liveDice ? st.dice : (last?.dice ?? null);
+  const net = st.net ?? (last ? { cards: last.cards, regime: last.regime, plays: last.plays } : null);
+  const chg = last?.chg ?? 0;
+
+  app.innerHTML = `
+    ${topbar()}
+    <div class="n-board">
+      ${alerts()}
+
+      ${st.phase === 'lobby' ? `
+        <div class="n-lobby">
+          <div class="n-code">${esc(st.code)}</div>
+          <div class="dim">${esc(joinUrl)}</div>
+          <div class="n-seats">${waitingPills(st, st.standings.map((p) => p.name))}</div>
+        </div>` : ''}
+
+      <div class="n-top">
+        <div class="n-mark">
+          <div class="n-lab">Mark</div>
+          <div class="m ${ui.markFlash ?? ''}">${st.mark}</div>
+          <div class="d ${cls(chg)}">${st.history.length ? signed(chg) : 'opening'}</div>
+        </div>
+        ${ladder(book)}
+        <div class="n-print">
+          <div class="n-lab">${liveBook ? 'Printed' : 'Last print'}</div>
+          <div class="p">${book?.price ?? '—'}</div>
+          <div class="dim">round ${st.round || '—'} of ${st.maxRounds}</div>
+        </div>
+      </div>
+
+      ${book ? `
+        <div class="n-flow big">
+          Pressure <b>${signed(book.pressure ?? 0)}</b> · book absorbed <b>${book.absorbed ?? 0}</b> ·
+          imbalance <b>${signed(book.imbalance)}</b> · print <b>${signed(impactOf(book.imbalance))}</b>
+          <i>paid by takers, collected by resters</i>
+        </div>` : ''}
+
+      <div class="n-cols">
+        <div>
+          ${dice ? `
+            ${rule(`Round ${liveDice ? st.round : last?.round} dice`, st.net
+              ? `net trend ${signed(st.net.trend)} · net magnitude ${signed(st.net.mag)}`
+              : last ? `${last.type === 'MULTIPLY' ? '×' : '+'} ${signed(last.chg)} to ${last.mark}` : '')}
+            <div class="n-pad">${diceRow(st, dice, liveDice)}</div>` : ''}
+
+          ${net ? `
+            ${rule('Cards played')}
+            <div class="scroll-x"><table>
+              <thead><tr><th>Player</th><th class="num">↑</th><th class="num">↓</th>
+                <th class="num">×</th><th class="num">+</th></tr></thead>
+              <tbody>
+                ${(net.plays ?? []).map((p) => `
+                  <tr><td>${esc(p.name)}</td>
+                    <td class="num ${p.up ? 'up' : 'dim'}">${p.up}</td>
+                    <td class="num ${p.down ? 'down' : 'dim'}">${p.down}</td>
+                    <td class="num ${p.multiply ? 'cyan' : 'dim'}">${p.multiply}</td>
+                    <td class="num ${p.add ? 'cyan' : 'dim'}">${p.add}</td></tr>`).join('')}
+                <tr><td class="strong">CARDS</td>
+                  <td class="num strong" colspan="2">trend ${signed(net.cards.trend)}</td>
+                  <td class="num strong" colspan="2">mag ${signed(net.cards.mag)}</td></tr>
+                <tr><td class="dim">REGIME</td>
+                  <td class="num dim" colspan="2">trend ${signed(net.regime.trend)}</td>
+                  <td class="num dim" colspan="2">mag ${signed(net.regime.mag)}</td></tr>
+              </tbody>
+            </table></div>` : ''}
+
+          ${st.history.length ? `${rule('Price path')}${historyTable(st)}` : ''}
+        </div>
+
+        <div>
+          ${hostMode ? `
+            ${rule('Host', PHASE_LABEL[st.phase])}
+            <div class="n-pad n-host">
+              ${st.phase === 'lobby' ? `
+                <div class="split">
+                  <label class="field"><span>Rounds</span>
+                    <input id="cfgRounds" class="num" value="${st.maxRounds}" inputmode="numeric"></label>
+                  <label class="field"><span>Cards each</span>
+                    <input id="cfgCards" class="num" value="${st.cardQty}" inputmode="numeric"></label>
+                </div>
+                <button class="primary n-go" id="start" ${st.seated < 1 ? 'disabled' : ''}>
+                  ${st.seated < 1 ? 'Waiting for players' : `Open the market (${st.seated} seated)`}
+                </button>` : ''}
+              ${st.phase === 'orders' || st.phase === 'cards' ? `
+                <button class="wide" id="force">Force the ${st.phase} gate${gate.length ? ` — skips ${esc(gate.join(', '))}` : ''}</button>` : ''}
+              ${st.phase === 'rolling' ? `
+                <button class="primary n-go" id="roll" ${ui.rolling ? 'disabled' : ''}>
+                  ${ui.rolling ? 'Rolling…' : `Roll ${st.dieLabel ?? ''} (${st.rollStep + 1}/4)`}
+                </button>` : ''}
+              ${st.phase === 'complete' ? '<div class="banner">Market closed</div>' : ''}
+              <div class="row">
+                <button id="copyJoin">Copy join link</button>
+                <button id="addSeat">Extra seat</button>
+                <button id="openDash">Dashboard</button>
+                <button class="danger" id="reset">Reset</button>
+              </div>
+            </div>` : ''}
+
+          ${st.phase === 'orders' || st.phase === 'cards' ? `
+            ${rule('Waiting on', `${gate.length} of ${st.seated}`)}
+            <div class="n-pad">${waitingPills(st, gate)}</div>` : ''}
+
+          ${rule('Standings', `${st.seated} seated`)}
+          ${standingsTable(st, { host: hostMode && st.phase === 'lobby' })}
+
+          ${rule('Tape')}
+          ${tape(st)}
+        </div>
+      </div>
+
+      <div class="n-foot">
+        <span class="spacer"></span>
+        <button class="ghost tiny" id="skin">Classic layout</button>
+      </div>
+    </div>`;
+
+  if (hostMode) wireHost(st, joinUrl);
+  const sk = document.getElementById('skin');
+  if (sk) sk.onclick = act.toggleSkin;
 }
 
 // --- Render / route --------------------------------------------------------
@@ -1046,10 +1434,11 @@ function render() {
   const start = active?.selectionStart;
   const end = active?.selectionEnd;
 
+  const next = ui.skin === 'next';
   if (!S.code) renderHome();
-  else if (S.role === 'player') renderPlayer();
-  else if (S.role === 'host') renderDashboard(true);
-  else if (S.role === 'dashboard') renderDashboard(false);
+  else if (S.role === 'player') (next ? renderPlayerNext : renderPlayer)();
+  else if (S.role === 'host') (next ? renderDashboardNext : renderDashboard)(true);
+  else if (S.role === 'dashboard') (next ? renderDashboardNext : renderDashboard)(false);
   else renderJoin();
 
   if (id) {
