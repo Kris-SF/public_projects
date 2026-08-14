@@ -1017,8 +1017,28 @@ function renderDashboard(hostMode = false) {
     marketOffer: last.marketOffer, limitOffer: last.limitOffer,
     pressure: last.pressure, absorbed: last.absorbed, price: last.print,
   } : null);
-  const liveDice = st.dice.some((d) => d !== null);
-  const dice = liveDice ? st.dice : (last?.dice ?? null);
+  /**
+   * The dice panel shows exactly one round, and says which.
+   *
+   * While rolling it is always the round being rolled, even before the first
+   * die lands — an empty board stating what each die needs is the point, and
+   * falling back to the previous round here put last round's faces under this
+   * round's modifiers, which is nonsense dressed up as information.
+   *
+   * Between rounds it replays the round that just settled, which is the beat
+   * the game builds to. During card play it shows nothing: that round has no
+   * dice yet and the previous one has had its moment.
+   */
+  const rolling = st.phase === 'rolling';
+  const replaying = st.phase === 'orders' && !!last;
+  const diceRound = rolling ? { dice: st.dice, net: st.net, round: st.round, live: true }
+    : replaying ? {
+        dice: last.dice, net: last.net, round: last.round, live: false,
+        resolved: { trend: last.trend, type: last.type, chg: last.chg },
+        priorMark: last.priorMark,
+      }
+    : null;
+
   const net = st.net ?? (last ? { cards: last.cards, regime: last.regime, plays: last.plays } : null);
   const chg = last?.chg ?? 0;
 
@@ -1057,18 +1077,19 @@ function renderDashboard(hostMode = false) {
 
       <div class="n-cols">
         <div>
-          ${dice ? `
-            ${rule(`Round ${liveDice ? st.round : last?.round} dice`, st.net
-              ? `net trend ${signed(st.net.trend)} · net magnitude ${signed(st.net.mag)}`
-              : last ? `${last.type === 'MULTIPLY' ? '×' : '+'} ${signed(last.chg)} to ${last.mark}` : '')}
+          ${diceRound ? `
+            ${rule(
+              diceRound.live ? `Round ${diceRound.round} dice` : `Round ${diceRound.round} settled`,
+              diceRound.live
+                ? `${st.rollStep} of 4 locked · net trend ${signed(diceRound.net.trend)} · net magnitude ${signed(diceRound.net.mag)}`
+                : `${signed(diceRound.resolved.chg)} to ${last.mark}`)}
             <div class="n-pad">${diceBoard({
-              dice,
-              net: liveDice ? st.net : last?.net,
-              live: liveDice,
+              dice: diceRound.dice,
+              net: diceRound.net,
+              live: diceRound.live,
               rollStep: st.rollStep,
-              resolved: !liveDice && last
-                ? { trend: last.trend, type: last.type, chg: last.chg } : null,
-              priorMark: last?.priorMark,
+              resolved: diceRound.resolved ?? null,
+              priorMark: diceRound.priorMark,
             })}</div>` : ''}
 
           ${net ? `
