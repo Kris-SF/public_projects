@@ -608,3 +608,10 @@ button.tiny { padding: 3px 8px; font-size: 10px; }
 @media (max-width: 460px) {
   .n-dice { grid-template-columns: repeat(2, 1fr); }
 }
+
+.n-legend {
+  padding: 5px 9px 7px;
+  font-size: 10px; line-height: 1.45; color: var(--grey);
+  border-bottom: 1px solid var(--rule);
+}
+.n-legend .up, .n-legend .down { font-weight: 700; }

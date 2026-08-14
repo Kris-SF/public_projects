@@ -546,7 +546,7 @@ function historyTable(st) {
       <td class="num dim">${h.dice.join(' ')}</td>
       <td class="num ${cls(h.net.trend)}">${signed(h.net.trend)}</td>
       <td class="num ${cls(h.net.mag)}">${signed(h.net.mag)}</td>
-      <td>${h.type === 'MULTIPLY' ? '×' : '+'}</td>
+      <td class="${h.type === 'MULTIPLY' ? 'cyan' : 'dim'}">${h.type === 'MULTIPLY' ? 'BIG' : 'SMALL'}</td>
       <td class="num strong ${cls(h.chg)}">${signed(h.chg)}</td>
       <td class="num strong">${h.mark}</td>
     </tr>`).join('');
@@ -558,7 +558,9 @@ function historyTable(st) {
           <th class="num">R</th><th class="num">LB</th><th class="num">MB</th>
           <th class="num">IMB</th><th class="num">MO</th><th class="num">LO</th>
           <th class="num">Print</th><th class="num">Dice</th>
-          <th class="num">Trend</th><th class="num">Mag</th><th>Type</th>
+          ${/* These two are the card-and-regime modifiers fed to each die, not
+               outcomes — named for the dice they push so the link is obvious. */ ''}
+          <th class="num">Trend&plusmn;</th><th class="num">Vol&plusmn;</th><th>Move</th>
           <th class="num">Chg</th><th class="num">Mark</th>
         </tr></thead>
         <tbody>${rows}</tbody>
@@ -685,24 +687,53 @@ function renderJoin() {
 
 // --- Player terminal -------------------------------------------------------
 
+/**
+ * Did this fill pay the print, or collect it?
+ *
+ * Measured against the mark the round opened on — the number the print was
+ * struck from. Buying above it is slippage paid; selling above it is edge
+ * collected. Positive is always good for the holder of the fill, whichever
+ * side they were on.
+ *
+ * A fill in the round currently being played has not settled yet, so there is
+ * no history row for it; the live mark is still the pre-dice mark, which is
+ * exactly the right reference.
+ */
+function fillEdge(fill) {
+  const opened = S.state.history.find((h) => h.round === fill.round)?.priorMark ?? S.state.mark;
+  const perShare = (opened - fill.price) * Math.sign(fill.qty);
+  return { perShare, dollars: perShare * Math.abs(fill.qty) };
+}
+
 function blotter(me) {
   if (!me.fills.length) return '<div class="body dim">No fills yet.</div>';
   return `
     <div class="scroll-x">
       <table>
         <thead><tr>
-          <th class="num">R</th><th class="num">Qty</th><th class="num">Price</th><th class="num">P/L</th>
+          <th class="num">R</th><th class="num">Qty</th><th class="num">Price</th>
+          <th class="num">Edge/Slip</th><th class="num">P/L</th>
         </tr></thead>
         <tbody>${me.fills.slice().reverse().map((f) => {
           const pl = (S.state.mark - f.price) * f.qty;
+          const e = fillEdge(f);
           return `<tr>
             <td class="num dim">${f.round}</td>
             <td class="num ${cls(f.qty)}">${signed(f.qty)}</td>
             <td class="num">${f.price}</td>
+            <td class="num ${cls(e.perShare)}">${
+              e.perShare === 0 ? 'flat'
+                : `${signed(e.perShare)}<span class="dim"> · ${e.dollars > 0 ? '+' : ''}${money(e.dollars)}</span>`
+            }</td>
             <td class="num ${cls(pl)}">${money(pl)}</td>
           </tr>`;
         }).join('')}</tbody>
       </table>
+    </div>
+    <div class="n-legend">
+      <span class="up">Positive</span> is edge — you rested and the print came to you.
+      <span class="down">Negative</span> is slippage — you crossed and paid for it.
+      Measured against the mark the round opened on.
     </div>`;
 }
 
