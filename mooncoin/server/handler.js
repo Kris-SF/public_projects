@@ -75,6 +75,11 @@ export async function handle({ method, query = {}, body = {} }) {
 }
 
 async function handleGet(query) {
+  // Store diagnostics. Reports which environment variable names are visible so
+  // a datastore that will not connect can be diagnosed from outside; it never
+  // reveals their values.
+  if (query.diag === '1') return ok(store.describe());
+
   const code = String(query.code || '').toUpperCase();
   if (!code) return bad(400, 'Room code required');
 
