@@ -6,6 +6,9 @@
  *
  *   orders  -> everyone submits qty + LIMIT/MARKET and confirms
  *              (gate) reveal the book, print the fill, write every blotter
+ *   auction -> options only: one gate per expiry, in round order. Everyone
+ *              quotes the strikes they want or passes
+ *              (gate) reveal that expiry's house orders, clear every contract
  *   cards   -> everyone plays cards and confirms
  *              (gate) reveal cards, compute the net, hand off to the dice
  *   rolling -> four dice, locked one at a time for the theatre of it
@@ -21,10 +24,11 @@ import {
 } from './engine.js';
 import {
   OPTION_DEFAULTS, createOptionsState, createPlayerOptions, indicateOrders,
-  expiryTables, strikeGrid,
+  expiryTables, strikeGrid, revealOrders, clearContract, makeQuote, makePosition,
+  contractKey, optionPL,
 } from './options.js';
 
-export const PHASES = ['lobby', 'orders', 'cards', 'rolling', 'complete'];
+export const PHASES = ['lobby', 'orders', 'auction', 'cards', 'rolling', 'complete'];
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1
 
@@ -140,7 +144,10 @@ function clearRound(game, rng = Math.random) {
       game.round, game.config.maxRounds, game.mark, game.config.optionRules, rng,
     );
     game.options.quotes = {};
-    game.options.cleared = null;
+    game.options.ready = {};
+    game.options.cleared = [];
+    game.options.activeExpiry = null;
+    game.options.tableIndex = 0;
   }
 }
 
@@ -217,9 +224,148 @@ export function tripOrdersGate(game) {
       filled: result.fills.find((f) => f.playerId === o.playerId)?.qty ?? 0,
     })),
   };
-  game.phase = 'cards';
   logLine(game, `Round ${game.round} printed ${result.price} on imbalance ${result.imbalance >= 0 ? '+' : ''}${result.imbalance}`);
+  game.phase = game.options ? 'auction' : 'cards';
+  if (game.options) openAuction(game, 0);
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Auction phase — one gate per expiry
+// ---------------------------------------------------------------------------
+
+/**
+ * Open the nth expiry for quoting, in round order — front month first.
+ *
+ * The board already shows which strikes carry a house order; what it does not
+ * show is which way or how big, because those have not been generated yet. So
+ * players quote into a `?` and are making a market rather than filling a known
+ * order, which is the whole point of the exercise.
+ */
+function openAuction(game, index) {
+  const tables = expiryTables(game.round, game.config.maxRounds, game.config.optionRules);
+  if (index >= tables.length) {
+    game.options.activeExpiry = null;
+    game.phase = 'cards';
+    logLine(game, 'Auction closed');
+    return;
+  }
+  game.options.tableIndex = index;
+  game.options.activeExpiry = tables[index].expiry;
+  game.options.quotes = {};
+  game.options.ready = {};
+  logLine(game, `Auction open — expiry R${tables[index].expiry}`);
+}
+
+/** Replace this player's quotes for the expiry on the block. Empty means pass. */
+export function submitQuotes(game, playerId, quotes = []) {
+  if (game.phase !== 'auction') throw new Error('No auction is open');
+  if (game.options.ready[playerId]) throw new Error('Quotes already confirmed');
+
+  const expiry = game.options.activeExpiry;
+  const strikes = strikeGrid(game.mark, game.config.optionRules);
+
+  const clean = (Array.isArray(quotes) ? quotes : []).map((q) => {
+    if (q.expiry !== expiry) throw new Error(`Quote is for R${q.expiry}, not R${expiry}`);
+    if (!strikes.includes(q.strike)) throw new Error(`$${q.strike} is not on the board`);
+    const num = (v, what) => {
+      if (v === null || v === undefined || v === '') return null;
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0) throw new Error(`${what} must be a number, or blank`);
+      return n;
+    };
+    const q2 = makeQuote({
+      playerId, expiry, kind: q.kind, strike: q.strike, round: game.round,
+      bidPx: num(q.bidPx, 'Bid'), bidQty: Math.trunc(Number(q.bidQty) || 0),
+      askPx: num(q.askPx, 'Ask'), askQty: Math.trunc(Number(q.askQty) || 0),
+    });
+    // A quote with a price but no size is an intention, not an order.
+    if (q2.bidPx !== null && q2.bidQty < 1) throw new Error('A bid needs a size');
+    if (q2.askPx !== null && q2.askQty < 1) throw new Error('An offer needs a size');
+    if (q2.bidPx !== null && q2.askPx !== null && q2.bidPx > q2.askPx) {
+      throw new Error('Your bid is above your offer');
+    }
+    return q2;
+  });
+
+  game.options.quotes[playerId] = clean;
+  return clean;
+}
+
+export function confirmQuotes(game, playerId) {
+  if (game.phase !== 'auction') throw new Error('No auction is open');
+  if (!game.options.quotes[playerId]) game.options.quotes[playerId] = [];
+  game.options.ready[playerId] = true;
+  const p = playerById(game, playerId);
+  const n = game.options.quotes[playerId].length;
+  logLine(game, `${p.name} ${n ? `quoted ${n} contract${n === 1 ? '' : 's'}` : 'passed'}`);
+  return maybeTripAuctionGate(game);
+}
+
+export function unconfirmQuotes(game, playerId) {
+  if (game.phase !== 'auction') return false;
+  delete game.options.ready[playerId];
+  return true;
+}
+
+export function allQuotesReady(game) {
+  return game.players.length > 0 && game.players.every((p) => game.options.ready[p.id]);
+}
+
+function maybeTripAuctionGate(game, force = false) {
+  if (!force && !allQuotesReady(game)) return false;
+  return tripAuctionGate(game);
+}
+
+/**
+ * Close the gate: reveal this expiry's house orders, then clear every contract.
+ *
+ * Reveal happens here and not a moment earlier, so nobody quotes against a known
+ * side or size. It scans the board for orders still carrying no side and no
+ * size, which keeps the stateless property §4 asks for.
+ */
+export function tripAuctionGate(game) {
+  if (game.phase !== 'auction') throw new Error('No auction is open');
+
+  const cfg = game.config.optionRules;
+  const expiry = game.options.activeExpiry;
+  const live = game.options.orders.filter((o) => o.expiry === expiry);
+  revealOrders(live, cfg);
+
+  const quotes = Object.values(game.options.quotes).flat();
+  const rank = new Map(game.players.map((p) => [p.id, position(p.fills, game.mark).pl]));
+
+  const results = [];
+  for (const order of live) {
+    const result = clearContract(order, quotes, { cfg, rank });
+    results.push(result);
+    if (result.price === null) continue;
+
+    game.options.marks[contractKey(result)] = result.price;
+    for (const t of result.trades) {
+      if (t.buyer) writeOption(game, t.buyer, result, t.qty, t.price);
+      if (t.seller) writeOption(game, t.seller, result, -t.qty, t.price);
+    }
+  }
+
+  const traded = results.filter((r) => r.price !== null);
+  game.options.cleared = [...(game.options.cleared ?? []), { expiry, results }];
+  logLine(game, `R${expiry} auction cleared — ${traded.length} of ${results.length} contracts traded`);
+
+  openAuction(game, game.options.tableIndex + 1);
+  return true;
+}
+
+function writeOption(game, playerId, contract, qty, premium) {
+  const p = playerById(game, playerId);
+  p.optionPositions.push(makePosition({
+    playerId, kind: contract.kind, strike: contract.strike, expiry: contract.expiry,
+    qty, premium, round: game.round,
+  }));
+  p.optionLog.push({
+    round: game.round, kind: contract.kind, strike: contract.strike,
+    expiry: contract.expiry, qty, premium,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -373,6 +519,10 @@ export function forceGate(game) {
     logLine(game, 'Host forced the orders gate');
     return maybeTripOrdersGate(game, true);
   }
+  if (game.phase === 'auction') {
+    logLine(game, 'Host forced the auction gate');
+    return maybeTripAuctionGate(game, true);
+  }
   if (game.phase === 'cards') {
     logLine(game, 'Host forced the cards gate');
     return maybeTripCardsGate(game, true);
@@ -430,13 +580,27 @@ export function playerById(game, id) {
   return p;
 }
 
+/**
+ * A player's P/L, stock and options together.
+ *
+ * Options mark against the last price the auction discovered; a contract the
+ * auction has not priced is carried flat rather than at an invented value.
+ */
+function withOptions(game, p) {
+  const stock = position(p.fills, game.mark);
+  if (!game.options) return stock;
+  const marks = new Map(Object.entries(game.options.marks));
+  const options = optionPL(p.optionPositions ?? [], marks);
+  return { ...stock, stockPl: stock.pl, optionPl: options, pl: stock.pl + options };
+}
+
 export function standings(game) {
   return game.players
     .map((p) => ({
       id: p.id,
       seat: p.seat,
       name: p.name,
-      ...position(p.fills, game.mark),
+      ...withOptions(game, p),
       cardsLeft: p.hand.up + p.hand.down + p.hand.multiply + p.hand.add,
       ordersReady: !!game.ready.orders[p.id],
       cardsReady: !!game.ready.cards[p.id],
@@ -480,6 +644,11 @@ export function publicState(game) {
     seated: game.players.length,
     // Counts only — knowing three people have committed is fair game, knowing
     // what they committed is not.
+    auction: game.options?.activeExpiry != null ? {
+      expiry: game.options.activeExpiry,
+      cleared: game.options.cleared ?? [],
+      awaiting: game.players.filter((p) => !game.options.ready?.[p.id]).map((p) => p.name),
+    } : null,
     awaitingOrders: game.players.filter((p) => !game.ready.orders[p.id]).map((p) => p.name),
     awaitingCards: game.players.filter((p) => !game.ready.cards[p.id]).map((p) => p.name),
   };
@@ -497,7 +666,7 @@ export function privateState(game, playerId) {
       hand: p.hand,
       initialHand: p.initialHand,
       fills: p.fills,
-      ...position(p.fills, game.mark),
+      ...withOptions(game, p),
       pendingOrder: game.pendingOrders[p.id] ?? null,
       pendingCards: game.pendingCards[p.id] ?? null,
       ordersReady: !!game.ready.orders[p.id],
@@ -507,7 +676,8 @@ export function privateState(game, playerId) {
       ...(game.config.options ? {
         optionPositions: p.optionPositions ?? [],
         optionLog: p.optionLog ?? [],
-        quotes: game.options?.quotes[p.id] ?? [],
+        quotes: game.options?.quotes?.[p.id] ?? [],
+        quotesReady: !!game.options?.ready?.[p.id],
       } : {}),
     },
   };

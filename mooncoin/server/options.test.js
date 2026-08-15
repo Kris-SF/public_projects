@@ -16,7 +16,10 @@ import {
   rollupPositions, grossOptionInventory, intrinsic, settleExpiring,
   optionPL, contractKey,
 } from './options.js';
-import { createGame, addPlayer, startGame, privateState, publicState } from './game.js';
+import {
+  createGame, addPlayer, startGame, privateState, publicState,
+  submitOrder, confirmOrder, submitQuotes, confirmQuotes, forceGate,
+} from './game.js';
 
 // --- §2 the floating grid ---------------------------------------------------
 
@@ -520,6 +523,150 @@ test('the board is indicated at round start and published in full', () => {
 
 test('a stock-only table publishes no board at all', () => {
   assert.equal(publicState(seatedGame({})).optionBoard, null);
+});
+
+// --- the auction phase: one gate per expiry ---------------------------------
+
+const twoSeats = (rules = {}) => {
+  const g = createGame('AUCT', { options: true, optionRules: rules });
+  addPlayer(g, 'alice');
+  addPlayer(g, 'bob');
+  startGame(g, () => 0.5);
+  for (const p of g.players) {
+    submitOrder(g, p.id, { qty: 0, type: 'LIMIT' });
+    confirmOrder(g, p.id);
+  }
+  return g;
+};
+
+test('the stock gate opens the auction, front month first', () => {
+  const g = twoSeats();
+  assert.equal(g.phase, 'auction');
+  assert.equal(g.options.activeExpiry, 1, 'round order — the current round leads');
+  assert.deepEqual(publicState(g).auction.awaiting, ['ALICE', 'BOB']);
+});
+
+test('a stock-only table skips the auction entirely', () => {
+  const g = createGame('PLAIN', {});
+  addPlayer(g, 'alice');
+  startGame(g, () => 0.5);
+  submitOrder(g, g.players[0].id, { qty: 0, type: 'LIMIT' });
+  confirmOrder(g, g.players[0].id);
+  assert.equal(g.phase, 'cards', 'straight from orders to cards');
+  assert.equal(publicState(g).auction, null);
+});
+
+test('the house order stays a question mark while players quote', () => {
+  const g = twoSeats();
+  const live = publicState(g).optionBoard.orders.filter((o) => o.expiry === 1);
+  assert.ok(live.every(isIndicated), 'no side and no size to quote against');
+
+  const [alice] = g.players;
+  submitQuotes(g, alice.id, [{
+    expiry: 1, kind: 'call', strike: 100, bidPx: 8, bidQty: 2, askPx: 12, askQty: 2,
+  }]);
+  assert.ok(publicState(g).optionBoard.orders.filter((o) => o.expiry === 1).every(isIndicated),
+    'still hidden after a quote lands');
+});
+
+test('the gate reveals, clears, and moves to the next expiry in round order', () => {
+  const g = twoSeats();
+  const [alice, bob] = g.players;
+  const atm = { expiry: 1, kind: 'call', strike: 100 };
+
+  submitQuotes(g, alice.id, [{ ...atm, bidPx: 8, bidQty: 5, askPx: 12, askQty: 5 }]);
+  submitQuotes(g, bob.id, [{ ...atm, bidPx: 9, bidQty: 5, askPx: 14, askQty: 5 }]);
+  confirmQuotes(g, alice.id);
+  assert.equal(g.options.activeExpiry, 1, 'gate holds for bob');
+
+  confirmQuotes(g, bob.id);
+
+  // R1 revealed and cleared; the board has moved on to R5.
+  assert.equal(g.phase, 'auction');
+  assert.equal(g.options.activeExpiry, 5, 'next expiry, in round order');
+  assert.ok(g.options.orders.filter((o) => o.expiry === 1).every((o) => !isIndicated(o)));
+  assert.ok(g.options.orders.filter((o) => o.expiry === 5).every(isIndicated),
+    'the later expiry is still sealed');
+
+  // Somebody traded the ATM call, and it is marked at what it printed.
+  const traded = g.options.cleared[0].results.filter((r) => r.price !== null);
+  assert.ok(traded.length >= 1);
+  const key = contractKey(traded[0]);
+  assert.equal(g.options.marks[key], traded[0].price);
+});
+
+test('passing is a confirm with no quotes, and the round still completes', () => {
+  const g = twoSeats({ expiryCount: 1 });
+  const [alice, bob] = g.players;
+  confirmQuotes(g, alice.id);
+  confirmQuotes(g, bob.id);
+
+  assert.equal(g.phase, 'cards', 'one expiry, one gate, then on to cards');
+  const results = g.options.cleared[0].results;
+  assert.ok(results.length > 0);
+  assert.ok(results.every((r) => r.price === null), 'nobody quoted, so nothing traded');
+  assert.deepEqual(g.players.flatMap((p) => p.optionPositions), []);
+});
+
+test('a fill writes both sides of the trade to the right blotters', () => {
+  const g = twoSeats({ expiryCount: 1, orderCoverage: 'all' });
+  const [alice, bob] = g.players;
+  const c = { expiry: 1, kind: 'call', strike: 100 };
+
+  // Alice offers cheap, Bob bids through her — one of them trades the house too.
+  submitQuotes(g, alice.id, [{ ...c, askPx: 5, askQty: 10 }]);
+  submitQuotes(g, bob.id, [{ ...c, bidPx: 25, bidQty: 10 }]);
+  confirmQuotes(g, alice.id);
+  confirmQuotes(g, bob.id);
+
+  const net = (p) => p.optionPositions.reduce((a, x) => a + x.qty, 0);
+  assert.equal(net(alice) + net(bob) <= 0, true, 'the house is long what the players are short');
+  assert.ok(alice.optionPositions.every((x) => x.qty < 0), 'alice only ever sold');
+  assert.ok(alice.optionLog.length > 0);
+  for (const pos of [...alice.optionPositions, ...bob.optionPositions]) {
+    assert.equal(pos.strike, 100);
+    assert.equal(pos.expiry, 1);
+    assert.equal(pos.round, 1);
+  }
+});
+
+test('quotes are refused for the wrong expiry or a strike off the board', () => {
+  const g = twoSeats();
+  const [alice] = g.players;
+  assert.throws(() => submitQuotes(g, alice.id, [
+    { expiry: 5, kind: 'call', strike: 100, bidPx: 1, bidQty: 1 },
+  ]), /not R1/);
+  assert.throws(() => submitQuotes(g, alice.id, [
+    { expiry: 1, kind: 'call', strike: 103, bidPx: 1, bidQty: 1 },
+  ]), /not on the board/);
+  assert.throws(() => submitQuotes(g, alice.id, [
+    { expiry: 1, kind: 'call', strike: 100, bidPx: 12, bidQty: 1, askPx: 8, askQty: 1 },
+  ]), /bid is above your offer/);
+  assert.throws(() => submitQuotes(g, alice.id, [
+    { expiry: 1, kind: 'call', strike: 100, bidPx: 8, bidQty: 0 },
+  ]), /bid needs a size/);
+});
+
+test('option P/L joins stock P/L in the score', () => {
+  const g = twoSeats({ expiryCount: 1, orderCoverage: 'all' });
+  const [alice, bob] = g.players;
+  const c = { expiry: 1, kind: 'call', strike: 100 };
+  submitQuotes(g, alice.id, [{ ...c, askPx: 5, askQty: 10 }]);
+  submitQuotes(g, bob.id, [{ ...c, bidPx: 25, bidQty: 10 }]);
+  confirmQuotes(g, alice.id);
+  confirmQuotes(g, bob.id);
+
+  const row = publicState(g).standings.find((s) => s.id === bob.id);
+  assert.equal('optionPl' in row, true);
+  assert.equal(row.pl, row.stockPl + row.optionPl);
+});
+
+test('the host can force an auction gate', () => {
+  const g = twoSeats({ expiryCount: 1 });
+  confirmQuotes(g, g.players[0].id);
+  assert.equal(g.phase, 'auction', 'bob has not confirmed');
+  forceGate(g);
+  assert.equal(g.phase, 'cards', 'forced through');
 });
 
 test('rules are configurable, and unspecified ones keep their defaults', () => {

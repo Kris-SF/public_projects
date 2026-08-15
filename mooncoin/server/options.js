@@ -471,10 +471,13 @@ export function settleExpiring(positions, round, price) {
 /** The options container hung off the game when the toggle is on. */
 export function createOptionsState() {
   return {
-    orders: [],     // this round's generated market orders, across all tables
-    quotes: {},     // playerId -> quote[]
-    cleared: null,  // this round's auction result, once stage 3 exists
-    marks: {},      // contractKey -> last discovered price
+    orders: [],          // this round's house orders, across all live tables
+    activeExpiry: null,  // the expiry currently on the block, if any
+    tableIndex: 0,       // its position in the round-ordered list
+    quotes: {},          // playerId -> quote[], for the active expiry only
+    ready: {},           // playerId -> true, the gate for the active expiry
+    cleared: [],         // one entry per expiry cleared this round
+    marks: {},           // contractKey -> last price the auction discovered
   };
 }
 
