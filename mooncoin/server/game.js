@@ -25,7 +25,7 @@ import {
 import {
   OPTION_DEFAULTS, createOptionsState, createPlayerOptions, indicateOrders,
   expiryTables, strikeGrid, revealOrders, clearContract, makeQuote, makePosition,
-  contractKey, optionPL,
+  contractKey, optionPL, settleExpiring, intrinsic,
 } from './options.js';
 
 export const PHASES = ['lobby', 'orders', 'auction', 'cards', 'rolling', 'complete'];
@@ -356,6 +356,43 @@ export function tripAuctionGate(game) {
   return true;
 }
 
+/**
+ * Expire everything struck for this round, against the mark the dice just set.
+ *
+ * The mark, not the print. The print is where the stock traded during the round;
+ * the mark is where it ends up once the dice have resolved, and that is the
+ * number an option struck for this round is a bet on.
+ *
+ * Expired rows come off the blotter, so the P/L they realised has to be kept
+ * somewhere that outlives them — otherwise a player's score would quietly
+ * unwind every time a contract expired.
+ */
+function settleOptions(game) {
+  if (!game.options) return [];
+
+  const settledRows = [];
+  for (const p of game.players) {
+    const { realized, settled, remaining } =
+      settleExpiring(p.optionPositions, game.round, game.mark);
+    if (!settled.length) continue;
+
+    p.realizedOptionPl = (p.realizedOptionPl ?? 0) + realized;
+    p.optionPositions = remaining;
+
+    for (const s of settled) {
+      const mark = intrinsic(s.kind, s.strike, game.mark);
+      game.options.marks[contractKey(s)] = mark;   // the blotter's final mark
+      p.settledOptions.push({
+        round: game.round, kind: s.kind, strike: s.strike, expiry: s.expiry,
+        qty: s.qty, mark, value: s.value,
+      });
+      settledRows.push({ name: p.name, qty: s.qty, kind: s.kind, strike: s.strike, mark });
+    }
+    logLine(game, `${p.name} settled ${settled.length} contract${settled.length === 1 ? '' : 's'} for ${realized >= 0 ? '+' : ''}${realized}`);
+  }
+  return settledRows;
+}
+
 function writeOption(game, playerId, contract, qty, premium) {
   const p = playerById(game, playerId);
   p.optionPositions.push(makePosition({
@@ -498,6 +535,10 @@ function settleRound(game) {
 
   logLine(game, `Round ${game.round} settled ${fmtSigned(chg)} to ${game.mark} (${type})`);
 
+  // Options struck for this round expire against the mark the dice just set.
+  const expired = settleOptions(game);
+  if (expired.length) game.history[game.history.length - 1].expired = expired;
+
   if (game.round >= game.config.maxRounds) {
     game.phase = 'complete';
     logLine(game, `Game over — final mark ${game.mark}`);
@@ -544,6 +585,8 @@ export function resetGame(game) {
     p.fills = [];
     delete p.optionPositions;
     delete p.optionLog;
+    delete p.settledOptions;
+    delete p.realizedOptionPl;
   }
   logLine(game, 'Game reset to lobby');
 }
@@ -590,7 +633,8 @@ function withOptions(game, p) {
   const stock = position(p.fills, game.mark);
   if (!game.options) return stock;
   const marks = new Map(Object.entries(game.options.marks));
-  const options = optionPL(p.optionPositions ?? [], marks);
+  const open = optionPL(p.optionPositions ?? [], marks);
+  const options = open + (p.realizedOptionPl ?? 0);
   return { ...stock, stockPl: stock.pl, optionPl: options, pl: stock.pl + options };
 }
 
@@ -676,6 +720,8 @@ export function privateState(game, playerId) {
       ...(game.config.options ? {
         optionPositions: p.optionPositions ?? [],
         optionLog: p.optionLog ?? [],
+        settledOptions: p.settledOptions ?? [],
+        realizedOptionPl: p.realizedOptionPl ?? 0,
         quotes: game.options?.quotes?.[p.id] ?? [],
         quotesReady: !!game.options?.ready?.[p.id],
       } : {}),

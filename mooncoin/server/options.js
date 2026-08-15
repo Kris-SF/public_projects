@@ -483,5 +483,10 @@ export function createOptionsState() {
 
 /** The per-player fields the options layer adds. No balance — see the header. */
 export function createPlayerOptions() {
-  return { optionPositions: [], optionLog: [] };
+  return {
+    optionPositions: [],    // open contracts
+    optionLog: [],          // one row per fill
+    settledOptions: [],     // contracts that have expired, with their final mark
+    realizedOptionPl: 0,    // P/L booked at expiry, kept after the rows drop off
+  };
 }

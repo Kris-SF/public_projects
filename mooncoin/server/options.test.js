@@ -19,6 +19,7 @@ import {
 import {
   createGame, addPlayer, startGame, privateState, publicState,
   submitOrder, confirmOrder, submitQuotes, confirmQuotes, forceGate,
+  confirmCards, lockRoll,
 } from './game.js';
 
 // --- §2 the floating grid ---------------------------------------------------
@@ -682,6 +683,138 @@ test('the host can force an auction gate', () => {
   assert.equal(g.phase, 'auction', 'bob has not confirmed');
   forceGate(g);
   assert.equal(g.phase, 'cards', 'forced through');
+});
+
+// --- settlement at expiry ---------------------------------------------------
+
+/** Drive a round to its end with forced dice, so the mark is known exactly. */
+const finishRound = (g, dice) => {
+  for (const p of g.players) confirmCards(g, p.id);
+  for (const d of dice) lockRoll(g, Math.random, d);
+};
+
+/** Two seats, an R1 call traded between them, ready for the dice. */
+const withAnRoundOneCall = () => {
+  const g = twoSeats({ expiryCount: 1, orderCoverage: 'all' });
+  const [alice, bob] = g.players;
+  const c = { expiry: 1, kind: 'call', strike: 100 };
+  submitQuotes(g, alice.id, [{ ...c, askPx: 5, askQty: 10 }]);
+  submitQuotes(g, bob.id, [{ ...c, bidPx: 25, bidQty: 10 }]);
+  confirmQuotes(g, alice.id);
+  confirmQuotes(g, bob.id);
+  return g;
+};
+
+test('an option settles at the end of its expiry round, against the mark', () => {
+  const g = withAnRoundOneCall();
+  const held = g.players.flatMap((p) => p.optionPositions);
+  assert.ok(held.length > 0, 'somebody is holding an R1 call');
+  // The print and the mark are different numbers, which is what makes this test
+  // mean anything: settled against the print a $100 call is worth nothing.
+  assert.equal(g.reveal.price, 100, 'flat orders, so the round printed at 100');
+
+  // Trend die 5 -> up, vol die 1 -> ADD, sizes 6 and 6 -> +12 to the mark.
+  finishRound(g, [5, 1, 6, 6]);
+  assert.equal(g.mark, 112, 'the dice, not the print, set where the round ends');
+
+  for (const p of g.players) {
+    assert.deepEqual(p.optionPositions, [], 'expired rows drop off the blotter');
+    if (!p.settledOptions.length) continue;
+    for (const s of p.settledOptions) {
+      assert.equal(s.expiry, 1);
+      assert.equal(s.mark, 12, 'a $100 call settles at 112 - 100, not against the 103 print');
+    }
+  }
+});
+
+test('longs collect and shorts pay, each by exactly intrinsic less premium', () => {
+  const g = withAnRoundOneCall();
+
+  // Worked out before the dice, because the round resets its auction state.
+  // The mark will be 112, so every $100 call settles at 12.
+  const expected = g.players.map((p) => ({
+    id: p.id,
+    pl: p.optionPositions.reduce((a, x) => a + (12 - x.premium) * x.qty, 0),
+  }));
+
+  finishRound(g, [5, 1, 6, 6]);
+
+  for (const { id, pl } of expected) {
+    const p = g.players.find((x) => x.id === id);
+    assert.equal(p.realizedOptionPl, pl, `${p.name}`);
+  }
+});
+
+test('realised P/L outlives the position that produced it', () => {
+  const g = withAnRoundOneCall();
+  finishRound(g, [5, 1, 6, 6]);
+
+  const seller = g.players.find((p) => p.settledOptions.some((s) => s.qty < 0));
+  if (!seller) return;   // the house took the whole offer this run
+
+  assert.deepEqual(seller.optionPositions, [], 'nothing open');
+  assert.notEqual(seller.realizedOptionPl, 0, 'the expiry booked something');
+
+  const row = publicState(g).standings.find((s) => s.id === seller.id);
+  assert.equal(row.optionPl, seller.realizedOptionPl,
+    'the score keeps it after the row is gone');
+  assert.equal(row.pl, row.stockPl + row.optionPl);
+});
+
+test('a later expiry is untouched by an earlier settlement', () => {
+  const g = twoSeats({ expiryCount: 2, orderCoverage: 'all' });
+  const [alice, bob] = g.players;
+
+  for (const expiry of [1, 5]) {
+    const c = { expiry, kind: 'call', strike: 100 };
+    submitQuotes(g, alice.id, [{ ...c, askPx: 5, askQty: 10 }]);
+    submitQuotes(g, bob.id, [{ ...c, bidPx: 25, bidQty: 10 }]);
+    confirmQuotes(g, alice.id);
+    confirmQuotes(g, bob.id);
+  }
+  const before = g.players.flatMap((p) => p.optionPositions);
+  assert.ok(before.some((x) => x.expiry === 5), 'an R5 position exists');
+
+  finishRound(g, [5, 1, 6, 6]);
+
+  const after = g.players.flatMap((p) => p.optionPositions);
+  assert.ok(after.length > 0 && after.every((x) => x.expiry === 5),
+    'R1 settled, R5 still open');
+  assert.equal(g.round, 2, 'and the game moved on');
+});
+
+test('the settled round records what expired', () => {
+  const g = withAnRoundOneCall();
+  finishRound(g, [5, 1, 6, 6]);
+  const h = g.history[0];
+  assert.ok(Array.isArray(h.expired) && h.expired.length > 0);
+  for (const row of h.expired) {
+    assert.equal(row.strike, 100);
+    assert.equal(row.mark, 12);
+  }
+});
+
+test('an option that expires worthless costs the buyer exactly its premium', () => {
+  const g = withAnRoundOneCall();
+  const buyer = g.players.find((p) => p.optionPositions.some((x) => x.qty > 0));
+  if (!buyer) return;
+  const paid = buyer.optionPositions.reduce((a, x) => a + x.premium * x.qty, 0);
+
+  // Trend die 1 -> down: the call ends miles out of the money.
+  finishRound(g, [1, 1, 6, 6]);
+  assert.equal(g.mark, 88);
+  assert.equal(buyer.realizedOptionPl, -paid, 'the whole premium, and not a penny more');
+});
+
+test('a stock-only table settles nothing and gains no fields', () => {
+  const g = createGame('PLAIN', {});
+  addPlayer(g, 'alice');
+  startGame(g, () => 0.5);
+  submitOrder(g, g.players[0].id, { qty: 1, type: 'MARKET' });
+  confirmOrder(g, g.players[0].id);
+  finishRound(g, [5, 1, 6, 6]);
+  assert.equal(g.players[0].realizedOptionPl, undefined);
+  assert.equal('expired' in g.history[0], false);
 });
 
 test('rules are configurable, and unspecified ones keep their defaults', () => {
