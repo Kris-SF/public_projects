@@ -51,8 +51,17 @@ export const OPTION_DEFAULTS = {
   // signal and of 18 orders per table instead of 6.
   orderCoverage: 'sampled',
 
-  // §3 — the fixed-expiry tables that sit alongside the current round's table.
-  fixedExpiries: [3, 5],
+  // §3 — how many expiry tables are live at once, counting the current round's.
+  // Each one is a separate gate the whole table has to clear, so this is the
+  // main lever on how long a round takes: 1 is a front-month-only game, 3 is the
+  // spec's current/mid/final. Defaults to 2 because three gates plus stock plus
+  // cards is a lot of beats for one Zoom round.
+  expiryCount: 2,
+
+  // Exact control, if the derived set is not what you want. When null the
+  // expiries are derived from expiryCount and the game length: the final round
+  // for full-game exposure, then the midpoint.
+  fixedExpiries: null,
 
   // §10.1 — resolved: a market order with no quotes on the required side dies.
   unfilledMarketOrder: 'drop',
@@ -114,13 +123,23 @@ export function isTradeable(strike, anchor, cfg = OPTION_DEFAULTS) {
  * the adjacent question of whether three tables is too many for a Zoom round).
  */
 export function expiryTables(round, maxRounds, cfg = OPTION_DEFAULTS) {
-  const fixed = cfg.fixedExpiries ?? OPTION_DEFAULTS.fixedExpiries;
-  const tables = [{ key: `r${round}`, expiry: round, label: 'Current round', current: true }];
-  for (const e of fixed) {
-    if (e <= round || e > maxRounds) continue;
-    tables.push({ key: `r${e}`, expiry: e, label: `Round ${e}`, current: false });
-  }
-  return tables;
+  const count = cfg.expiryCount ?? OPTION_DEFAULTS.expiryCount;
+
+  // Derived in priority order — the current round always, then full-game
+  // exposure, then the midpoint — so trimming the count drops the least
+  // interesting table rather than an arbitrary one. Display order is by expiry.
+  const fixed = cfg.fixedExpiries
+    ?? [maxRounds, Math.ceil(maxRounds / 2)].slice(0, Math.max(0, count - 1));
+
+  const live = fixed.filter((e) => e > round && e <= maxRounds);
+  const wanted = cfg.fixedExpiries ? live : live.slice(0, Math.max(0, count - 1));
+
+  return [
+    { key: `r${round}`, expiry: round, label: 'Current round', current: true },
+    ...[...new Set(wanted)]
+      .sort((a, b) => a - b)
+      .map((e) => ({ key: `r${e}`, expiry: e, label: `Round ${e}`, current: false })),
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +273,109 @@ export function revealOrders(orders, cfg = OPTION_DEFAULTS, rng = Math.random) {
     revealed++;
   }
   return revealed;
+}
+
+// ---------------------------------------------------------------------------
+// The auction — §5
+// ---------------------------------------------------------------------------
+
+/**
+ * Order the quotes on one side into a book.
+ *
+ * Best price first, then the §5 tiebreak ladder: larger size wins, because
+ * showing size is the conviction the rule means to reward; then P/L, standing in
+ * for the spec's cash; then a stable coin flip so a three-way tie at the same
+ * size does not depend on submission order.
+ */
+function bookSide(quotes, side, cfg, rank, rng) {
+  const px = side === 'ask' ? 'askPx' : 'bidPx';
+  const qty = side === 'ask' ? 'askQty' : 'bidQty';
+  const dir = side === 'ask' ? 1 : -1;   // asks ascend, bids descend
+
+  return quotes
+    .filter((q) => q[px] !== null && q[px] !== undefined && q[qty] > 0)
+    .map((q) => ({ playerId: q.playerId, price: q[px], qty: q[qty], coin: rng() }))
+    .sort((a, b) =>
+      (a.price - b.price) * dir
+      || b.qty - a.qty
+      || (rank.get(b.playerId) ?? 0) - (rank.get(a.playerId) ?? 0)
+      || a.coin - b.coin);
+}
+
+/**
+ * Clear one contract: a house market order against the players' quotes.
+ *
+ * Step 1 — the market order takes the best price on the side it needs, and the
+ * price it first trades at is the clearing price. If it wants more than is shown
+ * there it walks the book, and each further level fills at ITS OWN limit, not at
+ * the clearing price. That is what makes showing size at a bad price expensive.
+ *
+ * Step 2 — whatever crossing interest is left over then trades among the
+ * players, and all of it prints at the clearing price. Note this is the worked
+ * examples' behaviour, not the prose's: §5 says secondary fills happen "only if
+ * quantity remains unfilled at the clearing price", but its own Example 1 has
+ * the market order consume every share at the clearing price and then still
+ * matches Charlie against Bob. The examples are the acceptance tests, so they
+ * win — a resting order behind the best price gets taken at the clearing price
+ * it never offered, which is the lesson the example is built to teach.
+ *
+ * No quotes on the side the order needs and nothing happens: no fill, no print,
+ * no bot (DECISION 1). A contract that nobody quoted simply does not trade.
+ */
+export function clearContract(order, quotes, opts = {}) {
+  const { cfg = OPTION_DEFAULTS, rank = new Map(), rng = Math.random } = opts;
+  const mine = quotes.filter((q) =>
+    q.expiry === order.expiry && q.kind === order.kind && q.strike === order.strike);
+
+  const wanted = order.side === 'BUY' ? 'ask' : 'bid';
+  const taking = bookSide(mine, wanted, cfg, rank, rng);
+  const result = {
+    expiry: order.expiry, kind: order.kind, strike: order.strike,
+    side: order.side, qty: order.qty,
+    price: null, filled: 0, trades: [],
+  };
+  if (!taking.length) return result;
+
+  // Step 1 — the house takes what it needs, level by level.
+  const price = taking[0].price;
+  result.price = price;
+  let left = order.qty;
+  for (const level of taking) {
+    if (left <= 0) break;
+    const take = Math.min(level.qty, left);
+    level.qty -= take;
+    left -= take;
+    result.filled += take;
+    result.trades.push(order.side === 'BUY'
+      ? { buyer: null, seller: level.playerId, qty: take, price: level.price, house: true }
+      : { buyer: level.playerId, seller: null, qty: take, price: level.price, house: true });
+  }
+
+  // Step 2 — leftover crossing interest trades among the players, at the
+  // clearing price. The side the house just ate carries its remaining size
+  // forward; the other side is untouched.
+  const rest = (side) => {
+    if (side === wanted) return taking.filter((l) => l.qty > 0);
+    return bookSide(mine, side, cfg, rank, rng);
+  };
+  const bids = rest('bid');
+  const asks = rest('ask');
+
+  let i = 0, j = 0;
+  while (i < bids.length && j < asks.length && bids[i].price >= asks[j].price) {
+    // A player quoting both sides must not trade with themselves.
+    if (bids[i].playerId === asks[j].playerId) { j++; continue; }
+    const take = Math.min(bids[i].qty, asks[j].qty);
+    bids[i].qty -= take;
+    asks[j].qty -= take;
+    result.trades.push({
+      buyer: bids[i].playerId, seller: asks[j].playerId, qty: take, price, house: false,
+    });
+    if (bids[i].qty === 0) i++;
+    if (asks[j].qty === 0) j++;
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------

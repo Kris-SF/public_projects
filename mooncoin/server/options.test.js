@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import {
   OPTION_DEFAULTS, strikeGrid, isTradeable, expiryTables,
   makePosition, makeMarketOrder, makeQuote, isIndicated,
-  indicateOrders, revealOrders,
+  indicateOrders, revealOrders, clearContract,
   rollupPositions, grossOptionInventory, intrinsic, settleExpiring,
   optionPL, contractKey,
 } from './options.js';
@@ -79,13 +79,31 @@ test('a locked strike survives the grid moving away and back', () => {
 
 // --- §3 expiry tables -------------------------------------------------------
 
+/** Three live tables — the spec's current/mid/final. Default is two. */
+const T3 = { ...OPTION_DEFAULTS, expiryCount: 3 };
+
+test('expiryCount sets how many tables are live at once', () => {
+  const at = (count) => expiryTables(1, 5, { ...OPTION_DEFAULTS, expiryCount: count })
+    .map((t) => t.expiry);
+  assert.deepEqual(at(1), [1], 'front month only');
+  assert.deepEqual(at(2), [1, 5], 'plus full-game exposure');
+  assert.deepEqual(at(3), [1, 3, 5], 'plus the midpoint');
+  assert.deepEqual(expiryTables(1, 5).map((t) => t.expiry), [1, 5], 'two by default');
+});
+
 test('three tables early, and the set shrinks as expiries pass', () => {
-  const rounds = (r) => expiryTables(r, 5).map((t) => t.expiry);
+  const rounds = (r) => expiryTables(r, 5, T3).map((t) => t.expiry);
   assert.deepEqual(rounds(1), [1, 3, 5]);
   assert.deepEqual(rounds(2), [2, 3, 5]);
   assert.deepEqual(rounds(3), [3, 5], 'R3 is the current-round table, not listed twice');
   assert.deepEqual(rounds(4), [4, 5]);
   assert.deepEqual(rounds(5), [5], 'the last round is a single front-month table');
+});
+
+test('the derived expiries scale with the game length', () => {
+  assert.deepEqual(expiryTables(1, 10, T3).map((t) => t.expiry), [1, 5, 10]);
+  assert.deepEqual(expiryTables(1, 3, T3).map((t) => t.expiry), [1, 2, 3]);
+  assert.deepEqual(expiryTables(1, 1, T3).map((t) => t.expiry), [1], 'a one-round game');
 });
 
 test('fixed expiries beyond the game length are dropped', () => {
@@ -132,7 +150,7 @@ const seeded = (seed) => () => {
 const countFor = (orders, expiry) => orders.filter((o) => o.expiry === expiry).length;
 
 test('a table gets 2 + 2X orders, so four at the default X=1', () => {
-  const orders = indicateOrders(1, 5, 100, OPTION_DEFAULTS, seeded(7));
+  const orders = indicateOrders(1, 5, 100, T3, seeded(7));
   assert.equal(orders.length, 12, 'three tables');
   for (const expiry of [1, 3, 5]) assert.equal(countFor(orders, expiry), 4);
 });
@@ -140,7 +158,7 @@ test('a table gets 2 + 2X orders, so four at the default X=1', () => {
 test("X=2 reproduces the spec's stated six per table and eighteen per round", () => {
   // The spec claims 6 and 18 at X=1, but its own formula (ATM pair + X each
   // side) only reaches six at X=2. Pinned here so the discrepancy stays visible.
-  const cfg = { ...OPTION_DEFAULTS, otmOrdersPerSide: 2 };
+  const cfg = { ...T3, otmOrdersPerSide: 2 };
   const orders = indicateOrders(1, 5, 100, cfg, seeded(7));
   assert.equal(orders.length, 18);
   for (const expiry of [1, 3, 5]) assert.equal(countFor(orders, expiry), 6);
@@ -148,7 +166,7 @@ test("X=2 reproduces the spec's stated six per table and eighteen per round", ()
 
 test('the ATM call and put always get an order', () => {
   for (let s = 1; s <= 25; s++) {
-    const orders = indicateOrders(1, 5, 100, OPTION_DEFAULTS, seeded(s));
+    const orders = indicateOrders(1, 5, 100, T3, seeded(s));
     const atm = orders.filter((o) => o.expiry === 3 && o.strike === 100);
     assert.deepEqual(atm.map((o) => o.kind).sort(), ['call', 'put'], `seed ${s}`);
   }
@@ -165,7 +183,7 @@ test('OTM means OTM — calls above the money, puts below', () => {
 });
 
 test('OTM strikes are sampled without replacement', () => {
-  const cfg = { ...OPTION_DEFAULTS, otmOrdersPerSide: 4 };
+  const cfg = { ...T3, otmOrdersPerSide: 4 };
   const orders = indicateOrders(1, 5, 100, cfg, seeded(11));
   assert.equal(countFor(orders, 3), 10, 'ATM pair plus four each side');
 
@@ -175,7 +193,7 @@ test('OTM strikes are sampled without replacement', () => {
 });
 
 test('X can never exceed the number of OTM strikes that exist', () => {
-  const cfg = { ...OPTION_DEFAULTS, otmOrdersPerSide: 99 };
+  const cfg = { ...T3, otmOrdersPerSide: 99 };
   const orders = indicateOrders(1, 5, 100, cfg, seeded(3));
   assert.equal(countFor(orders, 3), 10, 'clamped to the four strikes per side');
 });
@@ -191,7 +209,7 @@ test('indicate withholds side and size by not generating them', () => {
 });
 
 test('reveal fills every placeholder with a side and a legal size', () => {
-  const orders = indicateOrders(1, 5, 100, OPTION_DEFAULTS, seeded(9));
+  const orders = indicateOrders(1, 5, 100, T3, seeded(9));
   const n = revealOrders(orders, OPTION_DEFAULTS, seeded(21));
 
   assert.equal(n, 12);
@@ -204,7 +222,7 @@ test('reveal fills every placeholder with a side and a legal size', () => {
 });
 
 test('reveal is stateless — it reads the board, not the indicate step', () => {
-  const orders = indicateOrders(1, 5, 100, OPTION_DEFAULTS, seeded(4));
+  const orders = indicateOrders(1, 5, 100, T3, seeded(4));
   revealOrders(orders, OPTION_DEFAULTS, seeded(2));
 
   const before = orders.map((o) => `${o.side}${o.qty}`);
@@ -225,18 +243,126 @@ test('reveal is stateless — it reads the board, not the indicate step', () => 
 });
 
 test('the table set shrinks with the expiries, and so does the order count', () => {
-  const at = (round) => indicateOrders(round, 5, 100, OPTION_DEFAULTS, seeded(13)).length;
+  const at = (round) => indicateOrders(round, 5, 100, T3, seeded(13)).length;
   assert.equal(at(1), 12, 'three tables');
   assert.equal(at(3), 8, 'two tables');
   assert.equal(at(5), 4, 'one table');
 });
 
 test('full coverage puts a house order on every listed contract', () => {
-  const cfg = { ...OPTION_DEFAULTS, orderCoverage: 'all' };
+  const cfg = { ...T3, orderCoverage: 'all' };
   const orders = indicateOrders(1, 5, 100, cfg, seeded(6));
   assert.equal(countFor(orders, 3), 18, 'nine strikes, calls and puts');
   assert.equal(orders.length, 54);
   assert.ok(orders.every(isIndicated), 'still nothing generated until reveal');
+});
+
+// --- §5 the clearing engine: the six acceptance tests -----------------------
+
+const CALL = { expiry: 3, kind: 'call', strike: 100 };
+const mkt = (side, qty, c = CALL) => ({ ...c, side, qty });
+const bid = (playerId, qty, px, c = CALL) =>
+  makeQuote({ playerId, ...c, bidPx: px, bidQty: qty, round: 1 });
+const ask = (playerId, qty, px, c = CALL) =>
+  makeQuote({ playerId, ...c, askPx: px, askQty: qty, round: 1 });
+const clear = (order, quotes) => clearContract(order, quotes, { rng: () => 0.5 });
+const trade = (t) => [t.seller ?? 'HOUSE', t.buyer ?? 'HOUSE', t.qty, t.price];
+
+test('TEST 1 — secondary fill occurs', () => {
+  const r = clear(mkt('BUY', 1), [
+    ask('alice', 1, 12),
+    ask('bob', 1, 18),
+    bid('charlie', 1, 20),
+  ]);
+
+  assert.equal(r.price, 12, 'clearing price $12');
+  assert.deepEqual(r.trades.map(trade), [
+    ['alice', 'HOUSE', 1, 12],     // Alice sells 1 to market @ $12
+    ['bob', 'charlie', 1, 12],     // Charlie buys 1 from Bob at the CLEARING price
+  ]);
+});
+
+test('TEST 2 — no secondary fill', () => {
+  const PUT = { expiry: 4, kind: 'put', strike: 100 };
+  const r = clear(mkt('SELL', 2, PUT), [
+    bid('alice', 2, 15, PUT),
+    bid('bob', 1, 10, PUT),
+    ask('charlie', 1, 14, PUT),
+  ]);
+
+  assert.equal(r.price, 15);
+  assert.deepEqual(r.trades.map(trade), [['HOUSE', 'alice', 2, 15]]);
+  // $10 bid does not cross the $14 offer.
+  assert.equal(r.trades.filter((t) => !t.house).length, 0);
+});
+
+test('TEST 3 — spillover from a partially filled resting order', () => {
+  const C = { expiry: 5, kind: 'call', strike: 105 };
+  const r = clear(mkt('BUY', 1, C), [
+    ask('alice', 2, 10, C),
+    bid('bob', 1, 16, C),
+  ]);
+
+  assert.equal(r.price, 10);
+  assert.deepEqual(r.trades.map(trade), [
+    ['alice', 'HOUSE', 1, 10],
+    ['alice', 'bob', 1, 10],   // Bob takes Alice's remaining size
+  ]);
+});
+
+test('TEST 4 — walking the book', () => {
+  const r = clear(mkt('BUY', 5), [
+    ask('alice', 2, 10),
+    ask('bob', 4, 14),
+  ]);
+
+  assert.deepEqual(r.trades.map(trade), [
+    ['alice', 'HOUSE', 2, 10],
+    ['bob', 'HOUSE', 3, 14],   // own limit price, NOT $10
+  ]);
+  assert.equal(r.price, 10, 'clearing price for secondary purposes is $10');
+  assert.equal(r.filled, 5);
+});
+
+test('TEST 5 — no liquidity', () => {
+  const r = clear(mkt('BUY', 1), [bid('alice', 1, 8)]);
+
+  assert.equal(r.price, null, 'no price printed');
+  assert.equal(r.filled, 0);
+  assert.deepEqual(r.trades, [], 'no bot fill');
+});
+
+// TEST 6 lives with the strike-grid tests above.
+
+// --- clearing: the cases the six tests do not cover --------------------------
+
+test('a market order larger than the whole book fills what it can', () => {
+  const r = clear(mkt('BUY', 10), [ask('alice', 2, 10), ask('bob', 1, 14)]);
+  assert.equal(r.filled, 3, 'and the rest simply does not trade');
+  assert.equal(r.price, 10);
+});
+
+test('quotes for other contracts are ignored', () => {
+  const other = { expiry: 5, kind: 'put', strike: 80 };
+  const r = clear(mkt('BUY', 1), [ask('alice', 1, 3, other), ask('bob', 1, 12)]);
+  assert.equal(r.price, 12, "the other contract's cheap offer is not on this book");
+});
+
+test('a two-sided quote never trades with itself', () => {
+  const r = clear(mkt('BUY', 1), [
+    ask('alice', 2, 10),
+    makeQuote({ playerId: 'alice', ...CALL, bidPx: 20, bidQty: 5, round: 1 }),
+  ]);
+  assert.deepEqual(r.trades.map(trade), [['alice', 'HOUSE', 1, 10]]);
+});
+
+test('size wins a price tie, then P/L', () => {
+  const quotes = [ask('alice', 1, 10), ask('bob', 3, 10), ask('carol', 3, 10)];
+  const rank = new Map([['carol', 500], ['bob', 100]]);
+  const r = clearContract(mkt('BUY', 3), quotes, { rank, rng: () => 0.5 });
+
+  assert.equal(r.trades[0].seller, 'carol', 'bigger size, and better P/L than bob');
+  assert.equal(r.trades[0].qty, 3);
 });
 
 // --- §9 rollup --------------------------------------------------------------
@@ -382,9 +508,9 @@ test('the board is indicated at round start and published in full', () => {
   const board = publicState(g).optionBoard;
 
   assert.equal(board.anchor, 100, 'anchored on the opening mark');
-  assert.deepEqual(board.tables.map((t) => t.expiry), [1, 3, 5]);
+  assert.deepEqual(board.tables.map((t) => t.expiry), [1, 5], 'two tables by default');
   assert.deepEqual(board.tables[0].strikes, strikeGrid(100));
-  assert.equal(board.orders.length, 12);
+  assert.equal(board.orders.length, 8);
 
   // Publishing the board in full is safe precisely because nothing is decided.
   assert.ok(board.orders.every(isIndicated));
