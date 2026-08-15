@@ -544,6 +544,12 @@ label.field > span {
 .n-seg button.on { background: var(--accent); color: var(--on-accent); }
 .n-seg button.on.buy  { background: var(--up);   color: #04140A; }
 .n-seg button.on.sell { background: var(--down); color: #1A0605; }
+/* :hover:not(:disabled) out-specifies a bare .on, so hovering the segment you
+   have already chosen used to wash it grey — the selected state disappearing
+   under the cursor that selected it. Restated at hover specificity. */
+.n-seg button.on:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+.n-seg button.on.buy:hover:not(:disabled)  { background: var(--up);   color: #04140A; }
+.n-seg button.on.sell:hover:not(:disabled) { background: var(--down); color: #1A0605; }
 
 .n-qty {
   font-size: 40px; font-weight: 500; text-align: right;
@@ -886,3 +892,44 @@ label.field > span {
 .o-quote-grid input::placeholder { font-size: 11px; letter-spacing: 0.06em; }
 
 .o-setup { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); align-items: end; }
+
+/* Sizes read as counts, prices read as money — so they are set differently and
+   coloured differently, and the price carries its own dollar sign. */
+.o-cur { color: var(--faint); margin-right: 1px; font-size: 0.82em; }
+
+.o-quote-grid { align-items: stretch; }
+.o-size {
+  color: var(--white);
+  font-size: 14px; padding: 8px 9px; text-align: right; border-radius: 8px;
+}
+.o-money {
+  display: flex; align-items: center; gap: 1px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--ring);
+  border-radius: 8px;
+  padding-left: 8px;
+}
+.o-money:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(88, 99, 248, 0.22); }
+.o-money .o-cur { font-size: 13px; }
+.o-money input {
+  background: none; border: none; box-shadow: none;
+  padding: 8px 8px 8px 2px; font-size: 14px; text-align: right;
+}
+.o-money input:focus { box-shadow: none; }
+.o-money.bid, .o-money.bid .o-cur, .o-money.bid input { color: var(--up); }
+.o-money.ask, .o-money.ask .o-cur, .o-money.ask input { color: var(--down); }
+.o-money.bid { border-color: rgba(53, 208, 127, 0.3); }
+.o-money.ask { border-color: rgba(255, 94, 91, 0.3); }
+
+.o-quote-legend {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px;
+  margin-top: 5px;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--faint); text-align: center;
+}
+
+/* The house named its side up front and is still hiding its size. */
+.o-told { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; }
+
+.o-setup { grid-template-columns: 1fr auto; align-items: end; }
+.o-toggle { margin: 6px 0 0; min-width: 210px; }

@@ -4,11 +4,11 @@
  * A round runs through two gates, mirroring the two ready-columns the
  * spreadsheet tracked:
  *
- *   orders  -> everyone submits qty + LIMIT/MARKET and confirms
- *              (gate) reveal the book, print the fill, write every blotter
  *   auction -> options only: one gate per expiry, in round order. Everyone
  *              quotes the strikes they want or passes
  *              (gate) reveal that expiry's house orders, clear every contract
+ *   orders  -> everyone submits qty + LIMIT/MARKET and confirms
+ *              (gate) reveal the book, print the fill, write every blotter
  *   cards   -> everyone plays cards and confirms
  *              (gate) reveal cards, compute the net, hand off to the dice
  *   rolling -> four dice, locked one at a time for the theatre of it
@@ -28,7 +28,7 @@ import {
   contractKey, optionPL, settleExpiring, intrinsic,
 } from './options.js';
 
-export const PHASES = ['lobby', 'orders', 'auction', 'cards', 'rolling', 'complete'];
+export const PHASES = ['lobby', 'auction', 'orders', 'cards', 'rolling', 'complete'];
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1
 
@@ -122,9 +122,9 @@ export function startGame(game, rng = Math.random) {
   game.options = game.config.options ? createOptionsState() : null;
   game.round = 1;
   game.mark = game.config.openingPrice;
-  game.phase = 'orders';
   game.history = [];
   clearRound(game, rng);
+  beginRound(game);
   logLine(game, `Game opened at ${game.config.openingPrice} — ${game.config.maxRounds} rounds, ${game.config.cardQty} cards each`);
   return game;
 }
@@ -148,6 +148,28 @@ function clearRound(game, rng = Math.random) {
     game.options.cleared = [];
     game.options.activeExpiry = null;
     game.options.tableIndex = 0;
+  }
+}
+
+/**
+ * Open a round on its first gate.
+ *
+ * Options trade before stock, deliberately. It means somebody who has just been
+ * hung with a short call can go and buy the underlying against it in the same
+ * round — the delta hedge is the whole reason the two legs sit in one game, and
+ * running stock first would push every hedge a round late, after the dice have
+ * already settled the thing you were hedging.
+ *
+ * It also puts the harder decision first, while attention is fresh, and leaves
+ * the stock order knowing who got filled with what — which is a read worth
+ * having rather than a leak.
+ */
+function beginRound(game) {
+  if (game.options) {
+    game.phase = 'auction';
+    openAuction(game, 0);
+  } else {
+    game.phase = 'orders';
   }
 }
 
@@ -225,8 +247,7 @@ export function tripOrdersGate(game) {
     })),
   };
   logLine(game, `Round ${game.round} printed ${result.price} on imbalance ${result.imbalance >= 0 ? '+' : ''}${result.imbalance}`);
-  game.phase = game.options ? 'auction' : 'cards';
-  if (game.options) openAuction(game, 0);
+  game.phase = 'cards';
   return true;
 }
 
@@ -246,8 +267,8 @@ function openAuction(game, index) {
   const tables = expiryTables(game.round, game.config.maxRounds, game.config.optionRules);
   if (index >= tables.length) {
     game.options.activeExpiry = null;
-    game.phase = 'cards';
-    logLine(game, 'Auction closed');
+    game.phase = 'orders';
+    logLine(game, 'Auction closed — the stock is open');
     return;
   }
   game.options.tableIndex = index;
@@ -544,8 +565,8 @@ function settleRound(game) {
     logLine(game, `Game over — final mark ${game.mark}`);
   } else {
     game.round += 1;
-    game.phase = 'orders';
     clearRound(game);
+    beginRound(game);
   }
   return { settled: true, trend, type, chg, mark: game.mark };
 }

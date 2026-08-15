@@ -877,7 +877,8 @@ function wireHost(st, joinUrl) {
     }
     setTimeout(act.start, 60);   // let the config land before the deal
   });
-  on('cfgOptions', () => act.config({ options: !st.options }));
+  on('cfgOptionsOn', () => act.config({ options: true }));
+  on('cfgOptionsOff', () => act.config({ options: false }));
   on('force', act.force);
   on('roll', act.roll);
   on('reset', act.reset);
@@ -1084,10 +1085,32 @@ function lastRoundReplay(st, me) {
 const optKey = (o) => `${o.expiry}|${o.kind}|${o.strike}`;
 const optLabel = (o) => `${o.kind === 'call' ? 'Call' : 'Put'} ${o.strike} · R${o.expiry}`;
 
+/**
+ * Order-flow heat.
+ *
+ * One heatmap meaning one thing: which way the house is going and how hard.
+ * Green for a buyer, red for a seller, intensity by size against the biggest
+ * order it can write. An unrevealed order has no size to weigh yet, so it gets
+ * the faintest wash — enough to say "something is here" without implying scale.
+ */
+function heat(order, max) {
+  if (!order) return '';
+  if (order.side === null) return ' style="background:rgba(88,99,248,.10)"';
+  const share = order.qty === null ? 0.18 : 0.10 + 0.42 * Math.min(1, order.qty / max);
+  const rgb = order.side === 'BUY' ? '53,208,127' : '255,94,91';
+  return ` style="background:rgba(${rgb},${share.toFixed(2)})"`;
+}
+
 /** The house's order on a contract: a question mark until its gate closes. */
 function houseCell(order) {
   if (!order) return '<span class="o-none">·</span>';
-  if (order.side === null) return '<span class="o-ask">?</span>';
+  // Unrevealed: either a plain question mark, or a side the house told you up
+  // front with the size still to come.
+  if (order.qty === null) {
+    return order.side === null
+      ? '<span class="o-ask">?</span>'
+      : `<span class="${order.side === 'BUY' ? 'up' : 'down'}">${order.side === 'BUY' ? 'B' : 'S'}?</span>`;
+  }
   return `<span class="${order.side === 'BUY' ? 'up' : 'down'}">${order.side === 'BUY' ? 'B' : 'S'}${order.qty}</span>`;
 }
 
@@ -1099,14 +1122,20 @@ function montage(table, board) {
   const orderAt = (kind, strike) => board.orders.find(
     (o) => o.expiry === table.expiry && o.kind === kind && o.strike === strike);
   const markAt = (kind, strike) => board.marks[`${table.expiry}|${kind}|${strike}`];
+  const maxQty = Math.max(10, ...board.orders.map((o) => o.qty ?? 0));
 
   const rows = table.strikes.map((strike) => {
     const atm = strike === board.anchor;
     const pxCell = (kind) => {
       const v = markAt(kind, strike);
-      return `<td class="num o-px">${v === undefined ? '<span class="o-none">—</span>' : v}</td>`;
+      return `<td class="num o-px">${v === undefined
+        ? '<span class="o-none">—</span>'
+        : `<span class="o-cur">$</span>${v}`}</td>`;
     };
-    const ordCell = (kind) => `<td class="o-side">${houseCell(orderAt(kind, strike))}</td>`;
+    const ordCell = (kind) => {
+      const o = orderAt(kind, strike);
+      return `<td class="o-side"${heat(o, maxQty)}>${houseCell(o)}</td>`;
+    };
     // Mirrored around the spine: the order column outermost, the price against
     // the strike, so the two sides read outward from the middle.
     return `
@@ -1178,22 +1207,35 @@ function quoteTicket(st, me) {
     return v === null || v === undefined ? '' : v;
   };
 
+  // Sizes outermost, prices against the middle — the same mirror the montage
+  // uses, so a two-sided market reads outward from its own spread.
+  const size = (o, f, label) => `
+    <input class="o-size" inputmode="numeric" placeholder="size" aria-label="${label}"
+           data-q="${optKey(o)}" data-f="${f}" value="${esc(val(o, f))}">`;
+  const price = (o, f, label, side) => `
+    <div class="o-money ${side}">
+      <span class="o-cur">$</span>
+      <input class="o-price" inputmode="decimal" placeholder="0" aria-label="${label}"
+             data-q="${optKey(o)}" data-f="${f}" value="${esc(val(o, f))}">
+    </div>`;
+
   const rows = live.map((o) => `
     <div class="o-quote">
       <div class="o-quote-cap">
         <span class="${o.kind === 'call' ? 'up' : 'down'}">${optLabel(o)}</span>
-        <span class="spacer"></span><span class="o-ask">?</span>
+        <span class="spacer"></span>
+        ${o.side
+          ? `<span class="o-told ${o.side === 'BUY' ? 'up' : 'down'}">house ${o.side.toLowerCase()}s</span>`
+          : '<span class="o-ask">?</span>'}
       </div>
       <div class="o-quote-grid">
-        <input inputmode="decimal" placeholder="bid" aria-label="${optLabel(o)} bid"
-               data-q="${optKey(o)}" data-f="bidPx" value="${esc(val(o, 'bidPx'))}">
-        <input inputmode="numeric" placeholder="size" aria-label="${optLabel(o)} bid size"
-               data-q="${optKey(o)}" data-f="bidQty" value="${esc(val(o, 'bidQty'))}">
-        <input inputmode="decimal" placeholder="ask" aria-label="${optLabel(o)} ask"
-               data-q="${optKey(o)}" data-f="askPx" value="${esc(val(o, 'askPx'))}">
-        <input inputmode="numeric" placeholder="size" aria-label="${optLabel(o)} ask size"
-               data-q="${optKey(o)}" data-f="askQty" value="${esc(val(o, 'askQty'))}">
+        ${size(o, 'bidQty', `${optLabel(o)} bid size`)}
+        ${price(o, 'bidPx', `${optLabel(o)} bid`, 'bid')}
+        ${price(o, 'askPx', `${optLabel(o)} ask`, 'ask')}
+        ${size(o, 'askQty', `${optLabel(o)} ask size`)}
       </div>
+      <div class="o-quote-legend"><span>bid size</span><span class="up">your bid</span>
+        <span class="down">your ask</span><span>ask size</span></div>
     </div>`).join('');
 
   return `
@@ -1233,8 +1275,8 @@ function optionBlotter(me, st) {
         return `<tr>
           <td>${optLabel(r)}</td>
           <td class="num ${cls(r.qty)}">${signed(r.qty)}</td>
-          <td class="num dim">${px(avg)}</td>
-          <td class="num">${mk === undefined ? '<span class="o-none">—</span>' : mk}</td>
+          <td class="num dim"><span class="o-cur">$</span>${px(avg)}</td>
+          <td class="num">${mk === undefined ? '<span class="o-none">—</span>' : `<span class="o-cur">$</span>${mk}`}</td>
           <td class="num strong ${cls(pl)}">${mk === undefined ? '<span class="o-none">—</span>' : moneyHTML(pl)}</td>
         </tr>`;
       }).join('')}</tbody></table></div>`
@@ -1244,7 +1286,7 @@ function optionBlotter(me, st) {
       <tbody>${settled.slice().reverse().map((s) => `<tr>
         <td class="dim">${optLabel(s)}</td>
         <td class="num ${cls(s.qty)}">${signed(s.qty)}</td>
-        <td class="num">${s.mark}</td>
+        <td class="num"><span class="o-cur">$</span>${s.mark}</td>
         <td class="num ${cls(s.value)}">${moneyHTML(s.value)}</td>
       </tr>`).join('')}</tbody></table></div>` : ''}`;
 }
@@ -1489,17 +1531,25 @@ function renderDashboard(hostMode = false) {
                   <label class="field"><span>Cards each</span>
                     <input id="cfgCards" class="num" value="${st.cardQty}" inputmode="numeric"></label>
                 </div>
+                ${/* A segmented control, not a button: which state you are in
+                      has to be readable without pressing anything. */ ''}
                 <div class="o-setup">
-                  <button id="cfgOptions" class="${st.options ? 'on' : ''}">
-                    Options ${st.options ? 'on' : 'off'}
-                  </button>
+                  <div>
+                    <span class="n-lab">Options</span>
+                    <div class="n-seg mode o-toggle">
+                      <button id="cfgOptionsOff" class="${st.options ? '' : 'on'}">Stock only</button>
+                      <button id="cfgOptionsOn" class="${st.options ? 'on' : ''}">Options</button>
+                    </div>
+                  </div>
                   <label class="field" style="margin:0">
                     <span>Expiries</span>
                     <input id="cfgExpiries" class="num" value="${st.expiryCount ?? 2}"
                            inputmode="numeric" ${st.options ? '' : 'disabled'}>
                   </label>
                 </div>
-                <p class="n-note">Each expiry is its own gate, so two is a longer round than one.</p>
+                <p class="n-note">${st.options
+                  ? 'Options trade first each round, one gate per expiry — so two expiries is a longer round than one.'
+                  : 'The stock game, exactly as it plays today.'}</p>
                 <button class="primary n-go" id="start" ${st.seated < 1 ? 'disabled' : ''}>
                   ${st.seated < 1 ? 'Waiting for players' : `Open the market (${st.seated} seated)`}
                 </button>` : ''}

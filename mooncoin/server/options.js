@@ -44,6 +44,13 @@ export const OPTION_DEFAULTS = {
   marketOrderMin: 1,
   marketOrderMax: 10,
 
+  // How often the house shows its hand up front. A telegraphed order names its
+  // side at indicate time and still hides its size, so the table knows it is
+  // facing a buyer and can shade accordingly; the rest stay a plain `?` and have
+  // to be quoted honestly two-sided. A mix of both in the same round is the
+  // point — it is the difference between quoting a market and filling an order.
+  telegraphedShare: 0.5,
+
   // Whether the house auctions a sample of the board or all of it. 'sampled' is
   // §4: two ATM orders plus X OTM per side, so where the orders land is itself
   // information. 'all' puts a house order on every listed contract — closer to a
@@ -170,12 +177,19 @@ export function makePosition({ playerId, kind, strike, expiry, qty, premium, rou
  * during indicate. That statelessness is deliberate (spec §4) and stage 2 has
  * to preserve it.
  */
-export function makeMarketOrder({ expiry, kind, strike }) {
+export function makeMarketOrder({ expiry, kind, strike, side = null }) {
   if (!OPTION_KINDS.includes(kind)) throw new Error(`Unknown option kind: ${kind}`);
-  return { expiry, kind, strike, side: null, qty: null };
+  return { expiry, kind, strike, side, qty: null, telegraphed: side !== null };
 }
 
-export const isIndicated = (order) => order.qty === null && order.side === null;
+/**
+ * Still waiting on the gate.
+ *
+ * Size is the thing every house order withholds until reveal, so size is what
+ * decides this. A telegraphed order already names its side and is still
+ * unrevealed — its size has not been generated yet.
+ */
+export const isIndicated = (order) => order.qty === null;
 
 /**
  * A player's two-sided quote on one contract.
@@ -235,9 +249,14 @@ export function indicateOrders(round, maxRounds, anchor, cfg = OPTION_DEFAULTS, 
   const x = Math.min(cfg.otmOrdersPerSide ?? OPTION_DEFAULTS.otmOrdersPerSide, depth);
   const all = (cfg.orderCoverage ?? OPTION_DEFAULTS.orderCoverage) === 'all';
 
+  const share = cfg.telegraphedShare ?? OPTION_DEFAULTS.telegraphedShare;
   const orders = [];
   for (const { expiry } of expiryTables(round, maxRounds, cfg)) {
-    const at = (kind, strike) => orders.push(makeMarketOrder({ expiry, kind, strike }));
+    // Some orders show their side now, the rest stay a question mark.
+    const at = (kind, strike) => orders.push(makeMarketOrder({
+      expiry, kind, strike,
+      side: rng() < share ? (rng() < 0.5 ? 'BUY' : 'SELL') : null,
+    }));
     if (all) {
       for (const strike of grid) { at('call', strike); at('put', strike); }
       continue;
@@ -268,7 +287,7 @@ export function revealOrders(orders, cfg = OPTION_DEFAULTS, rng = Math.random) {
   let revealed = 0;
   for (const o of orders) {
     if (!isIndicated(o)) continue;
-    o.side = rng() < 0.5 ? 'BUY' : 'SELL';
+    if (o.side === null) o.side = rng() < 0.5 ? 'BUY' : 'SELL';
     o.qty = min + Math.floor(rng() * (max - min + 1));
     revealed++;
   }

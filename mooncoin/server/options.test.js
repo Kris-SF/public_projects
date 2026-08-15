@@ -212,6 +212,36 @@ test('indicate withholds side and size by not generating them', () => {
   assert.equal(wire.includes('price'), false, 'and no price, ever');
 });
 
+test('some orders telegraph their side, the rest stay a question mark', () => {
+  const cfg = { ...T3, telegraphedShare: 0.5 };
+  let told = 0, hidden = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    for (const o of indicateOrders(1, 5, 100, cfg, seeded(seed))) {
+      assert.equal(o.qty, null, 'size is withheld either way');
+      if (o.side === null) { hidden++; assert.equal(o.telegraphed, false); }
+      else { told++; assert.ok(['BUY', 'SELL'].includes(o.side)); assert.equal(o.telegraphed, true); }
+      assert.ok(isIndicated(o), 'telegraphed or not, the gate has not run');
+    }
+  }
+  assert.ok(told > 0 && hidden > 0, `saw ${told} telegraphed and ${hidden} hidden`);
+});
+
+test('the share of telegraphed orders is a setting, and can be turned off', () => {
+  const none = indicateOrders(1, 5, 100, { ...T3, telegraphedShare: 0 }, seeded(3));
+  assert.ok(none.every((o) => o.side === null), 'every order a question mark');
+  const all = indicateOrders(1, 5, 100, { ...T3, telegraphedShare: 1 }, seeded(3));
+  assert.ok(all.every((o) => o.side !== null && o.qty === null),
+    'every side shown, every size still hidden');
+});
+
+test('reveal keeps a telegraphed side and only fills the size', () => {
+  const orders = indicateOrders(1, 5, 100, { ...T3, telegraphedShare: 1 }, seeded(8));
+  const sides = orders.map((o) => o.side);
+  revealOrders(orders, OPTION_DEFAULTS, seeded(2));
+  assert.deepEqual(orders.map((o) => o.side), sides, 'the promise made at indicate is kept');
+  assert.ok(orders.every((o) => o.qty >= 1 && o.qty <= 10));
+});
+
 test('reveal fills every placeholder with a side and a legal size', () => {
   const orders = indicateOrders(1, 5, 100, T3, seeded(9));
   const n = revealOrders(orders, OPTION_DEFAULTS, seeded(21));
@@ -528,33 +558,41 @@ test('a stock-only table publishes no board at all', () => {
 
 // --- the auction phase: one gate per expiry ---------------------------------
 
+/** Two seats, sitting on the round's first gate — which is the auction. */
 const twoSeats = (rules = {}) => {
   const g = createGame('AUCT', { options: true, optionRules: rules });
   addPlayer(g, 'alice');
   addPlayer(g, 'bob');
   startGame(g, () => 0.5);
+  return g;
+};
+
+/** Clear the stock gate flat and pass on cards, so only the dice are left. */
+const clearStock = (g) => {
   for (const p of g.players) {
     submitOrder(g, p.id, { qty: 0, type: 'LIMIT' });
     confirmOrder(g, p.id);
   }
-  return g;
 };
 
-test('the stock gate opens the auction, front month first', () => {
+test('the round opens on the auction, front month first', () => {
   const g = twoSeats();
-  assert.equal(g.phase, 'auction');
+  assert.equal(g.phase, 'auction', 'options trade before stock');
   assert.equal(g.options.activeExpiry, 1, 'round order — the current round leads');
   assert.deepEqual(publicState(g).auction.awaiting, ['ALICE', 'BOB']);
+  assert.throws(() => submitOrder(g, g.players[0].id, { qty: 1, type: 'MARKET' }),
+    /Not accepting orders/, 'the stock is shut until the auction is done');
 });
 
-test('a stock-only table skips the auction entirely', () => {
+test('a stock-only table opens straight on the stock', () => {
   const g = createGame('PLAIN', {});
   addPlayer(g, 'alice');
   startGame(g, () => 0.5);
+  assert.equal(g.phase, 'orders', 'no auction to run');
+  assert.equal(publicState(g).auction, null);
   submitOrder(g, g.players[0].id, { qty: 0, type: 'LIMIT' });
   confirmOrder(g, g.players[0].id);
-  assert.equal(g.phase, 'cards', 'straight from orders to cards');
-  assert.equal(publicState(g).auction, null);
+  assert.equal(g.phase, 'cards');
 });
 
 test('the house order stays a question mark while players quote', () => {
@@ -602,7 +640,7 @@ test('passing is a confirm with no quotes, and the round still completes', () =>
   confirmQuotes(g, alice.id);
   confirmQuotes(g, bob.id);
 
-  assert.equal(g.phase, 'cards', 'one expiry, one gate, then on to cards');
+  assert.equal(g.phase, 'orders', 'one expiry, one gate, then the stock opens');
   const results = g.options.cleared[0].results;
   assert.ok(results.length > 0);
   assert.ok(results.every((r) => r.price === null), 'nobody quoted, so nothing traded');
@@ -682,13 +720,14 @@ test('the host can force an auction gate', () => {
   confirmQuotes(g, g.players[0].id);
   assert.equal(g.phase, 'auction', 'bob has not confirmed');
   forceGate(g);
-  assert.equal(g.phase, 'cards', 'forced through');
+  assert.equal(g.phase, 'orders', 'forced through to the stock');
 });
 
 // --- settlement at expiry ---------------------------------------------------
 
 /** Drive a round to its end with forced dice, so the mark is known exactly. */
 const finishRound = (g, dice) => {
+  if (g.phase === 'orders') clearStock(g);
   for (const p of g.players) confirmCards(g, p.id);
   for (const d of dice) lockRoll(g, Math.random, d);
 };
@@ -709,13 +748,13 @@ test('an option settles at the end of its expiry round, against the mark', () =>
   const g = withAnRoundOneCall();
   const held = g.players.flatMap((p) => p.optionPositions);
   assert.ok(held.length > 0, 'somebody is holding an R1 call');
-  // The print and the mark are different numbers, which is what makes this test
-  // mean anything: settled against the print a $100 call is worth nothing.
-  assert.equal(g.reveal.price, 100, 'flat orders, so the round printed at 100');
 
   // Trend die 5 -> up, vol die 1 -> ADD, sizes 6 and 6 -> +12 to the mark.
   finishRound(g, [5, 1, 6, 6]);
   assert.equal(g.mark, 112, 'the dice, not the print, set where the round ends');
+  // The print and the mark are different numbers, which is what makes this test
+  // mean anything: settled against the print a $100 call is worth nothing.
+  assert.equal(g.history[0].print, 100, 'flat orders, so the round printed at 100');
 
   for (const p of g.players) {
     assert.deepEqual(p.optionPositions, [], 'expired rows drop off the blotter');
@@ -810,8 +849,6 @@ test('a stock-only table settles nothing and gains no fields', () => {
   const g = createGame('PLAIN', {});
   addPlayer(g, 'alice');
   startGame(g, () => 0.5);
-  submitOrder(g, g.players[0].id, { qty: 1, type: 'MARKET' });
-  confirmOrder(g, g.players[0].id);
   finishRound(g, [5, 1, 6, 6]);
   assert.equal(g.players[0].realizedOptionPl, undefined);
   assert.equal('expired' in g.history[0], false);
