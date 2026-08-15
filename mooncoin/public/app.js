@@ -1092,7 +1092,25 @@ function lastRoundReplay(st, me) {
 // ===========================================================================
 
 const optKey = (o) => `${o.expiry}|${o.kind}|${o.strike}`;
-const optLabel = (o) => `${o.kind === 'call' ? 'Call' : 'Put'} ${o.strike} · R${o.expiry}`;
+const optLabel = (o) => `${o.kind === 'call' ? 'Call' : 'Put'} $${o.strike} exp R${o.expiry}`;
+
+/**
+ * A contract's name, and the house's side, in deliberately different registers.
+ *
+ * They were both plain green-or-red text on one line, which meant green said
+ * "this is a call" on the left and "the house is buying" on the right — the same
+ * colour carrying two unrelated meanings a few inches apart, so the row read as
+ * one undifferentiated smear. The name is a quiet tinted badge; the side is a
+ * loud filled chip. Same palette, opposite weight, no confusion.
+ */
+const contractTag = (o) => `
+  <span class="o-kind ${o.kind}">${o.kind}</span>
+  <span class="o-name"><span class="o-cur">$</span>${o.strike}</span>
+  <span class="o-exp">R${o.expiry}</span>`;
+
+const houseFlag = (o) => (o.side
+  ? `<span class="o-flag ${o.side === 'BUY' ? 'buy' : 'sell'}">House ${o.side === 'BUY' ? 'buys' : 'sells'}</span>`
+  : '<span class="o-flag unknown">Side hidden</span>');
 
 /**
  * Order-flow heat.
@@ -1231,11 +1249,9 @@ function quoteTicket(st, me) {
   const rows = live.map((o) => `
     <div class="o-quote">
       <div class="o-quote-cap">
-        <span class="${o.kind === 'call' ? 'up' : 'down'}">${optLabel(o)}</span>
+        ${contractTag(o)}
         <span class="spacer"></span>
-        ${o.side
-          ? `<span class="o-told ${o.side === 'BUY' ? 'up' : 'down'}">house ${o.side.toLowerCase()}s</span>`
-          : '<span class="o-ask">?</span>'}
+        ${houseFlag(o)}
       </div>
       <div class="o-quote-grid">
         ${size(o, 'bidQty', `${optLabel(o)} bid size`)}
@@ -1243,17 +1259,21 @@ function quoteTicket(st, me) {
         ${price(o, 'askPx', `${optLabel(o)} ask`, 'ask')}
         ${size(o, 'askQty', `${optLabel(o)} ask size`)}
       </div>
-      <div class="o-quote-legend"><span>bid size</span><span class="up">your bid</span>
-        <span class="down">your ask</span><span>ask size</span></div>
     </div>`).join('');
 
   return `
     <div class="n-act">
-      ${live.length ? rows : '<p class="n-note">No orders on this expiry.</p>'}
+      ${live.length ? `
+        <div class="o-quote-legend">
+          <span>bid size</span><span class="up">your bid</span>
+          <span class="down">your ask</span><span>ask size</span>
+        </div>
+        ${rows}` : '<p class="n-note">No orders on this expiry.</p>'}
       <button class="primary n-go" id="submitQuotes">Confirm markets</button>
       <button id="passQuotes" class="wide n-pass">Pass this expiry</button>
-      <p class="n-note">You are quoting into a <b>?</b> — which way the house is going, and
-        how big, is settled when the gate closes. Leave a side blank to quote one-way.</p>
+      <p class="n-note">Where the side is hidden you are making a market, not filling
+        an order — which way the house is going is settled when the gate closes. Size is
+        always hidden. Leave a side blank to quote one-way.</p>
     </div>`;
 }
 
@@ -1322,7 +1342,7 @@ function optionBlotter(me, st) {
         const mk = marks[optKey(r)];
         const pl = mk === undefined ? 0 : (mk - avg) * r.qty;
         return `<tr>
-          <td>${optLabel(r)}</td>
+          <td class="o-contract">${contractTag(r)}</td>
           <td class="num ${cls(r.qty)}">${signed(r.qty)}</td>
           <td class="num dim"><span class="o-cur">$</span>${px(avg)}</td>
           <td class="num">${mk === undefined ? '<span class="o-none">—</span>' : `<span class="o-cur">$</span>${mk}`}</td>
@@ -1333,7 +1353,7 @@ function optionBlotter(me, st) {
     ${settled.length ? `<div class="scroll-x"><table>
       <thead><tr><th>Expired</th><th class="num">Qty</th><th class="num">Final</th><th class="num">Value</th></tr></thead>
       <tbody>${settled.slice().reverse().map((s) => `<tr>
-        <td class="dim">${optLabel(s)}</td>
+        <td class="o-contract spent">${contractTag(s)}</td>
         <td class="num ${cls(s.qty)}">${signed(s.qty)}</td>
         <td class="num"><span class="o-cur">$</span>${s.mark}</td>
         <td class="num ${cls(s.value)}">${moneyHTML(s.value)}</td>

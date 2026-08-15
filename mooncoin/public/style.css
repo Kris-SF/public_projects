@@ -921,15 +921,46 @@ label.field > span {
 .o-money.bid { border-color: rgba(53, 208, 127, 0.3); }
 .o-money.ask { border-color: rgba(255, 94, 91, 0.3); }
 
+/* Named once at the top of the block, not repeated under every contract. */
 .o-quote-legend {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px;
-  margin-top: 5px;
+  margin: 0 0 8px;
   font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em;
   text-transform: uppercase; color: var(--faint); text-align: center;
 }
 
-/* The house named its side up front and is still hiding its size. */
-.o-told { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; }
+/* --- naming a contract, and flagging the house's side --------------------- */
+
+/* Two different jobs, so two different registers. The name is a label and stays
+   quiet; the side is live state and shouts. Sharing the palette is fine once
+   the weight tells them apart. */
+.o-kind {
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 5px;
+}
+.o-kind.call { background: rgba(53, 208, 127, 0.15); color: var(--up); }
+.o-kind.put  { background: rgba(255, 94, 91, 0.15); color: var(--down); }
+
+.o-name {
+  font-family: var(--mono); font-size: 14px; font-weight: 500;
+  letter-spacing: -0.028em; color: var(--white); margin-left: 7px;
+}
+.o-exp {
+  font-family: var(--mono); font-size: 11px; color: var(--faint); margin-left: 6px;
+}
+
+.o-flag {
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+}
+.o-flag.buy     { background: var(--up);   color: #04140A; }
+.o-flag.sell    { background: var(--down); color: #1A0605; }
+.o-flag.unknown { background: var(--accent-glow); color: var(--accent-bright); }
+
+.o-contract { white-space: nowrap; }
+.o-contract.spent { opacity: 0.6; }
 
 .o-setup { grid-template-columns: 1fr auto; align-items: end; }
 .o-toggle { margin: 6px 0 0; min-width: 210px; }
