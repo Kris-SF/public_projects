@@ -802,3 +802,87 @@ label.field > span {
 @media (max-width: 460px) {
   .n-dice { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ===========================================================================
+   OPTIONS
+   A montage, laid out the way a board is: calls left, the strike spine down the
+   middle, puts right, strikes increasing downward. Every price here was
+   discovered by the auction — a contract it has not priced shows a dash, never
+   a guess.
+   =========================================================================== */
+
+.o-tables { display: grid; gap: 10px; padding: 0 14px; }
+@media (min-width: 900px) { .o-tables { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); } }
+
+.o-table {
+  background: var(--l1);
+  border: 1px solid var(--ring);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+/* The expiry currently on the block is the one thing lit. */
+.o-table.live {
+  background: var(--l2);
+  border-color: rgba(88, 99, 248, 0.42);
+  box-shadow: var(--lift);
+}
+.o-cap {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--accent-dim);
+  border-bottom: 1px solid var(--ring);
+}
+.o-cap .dim { letter-spacing: 0.06em; text-transform: none; color: var(--faint); }
+.o-live {
+  margin-left: auto;
+  background: var(--accent-glow); color: var(--accent-bright);
+  border-radius: 999px; padding: 2px 9px; letter-spacing: 0.06em; text-transform: none;
+}
+
+.o-montage { font-size: 13px; }
+.o-montage th { padding: 6px 10px; font-size: 9px; }
+.o-montage td { padding: 5px 10px; border-top: 1px solid rgba(255, 255, 255, 0.04); }
+.o-montage .o-kinds th {
+  text-align: center; color: var(--faint); letter-spacing: 0.16em;
+  border-bottom: 1px solid var(--ring);
+}
+
+/* The spine: the one column that is not a quote. */
+.o-strike {
+  text-align: center !important;
+  font-family: var(--mono); font-weight: 600;
+  color: var(--white);
+  background: rgba(255, 255, 255, 0.03);
+  border-inline: 1px solid var(--ring);
+}
+.o-montage tr.o-atm td { background: var(--accent-glow); }
+.o-montage tr.o-atm .o-strike { color: var(--accent-bright); }
+
+.o-px { font-family: var(--mono); color: var(--white); }
+.o-side { text-align: center; font-family: var(--mono); font-size: 12px; width: 3.2em; }
+.o-none { color: var(--grey-dark); }
+/* The house has an order here, and will not say which way until the gate shuts. */
+.o-ask { color: var(--accent-bright); font-weight: 600; }
+
+/* --- quoting -------------------------------------------------------------- */
+
+.o-quote {
+  background: var(--l3);
+  border: 1px solid var(--ring);
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+.o-quote-cap {
+  display: flex; align-items: center;
+  font-family: var(--mono); font-size: 12px;
+  margin-bottom: 8px;
+}
+.o-quote-cap .spacer { margin-left: auto; }
+.o-quote-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.o-quote-grid input { font-size: 14px; padding: 8px 9px; text-align: right; border-radius: 8px; }
+.o-quote-grid input::placeholder { font-size: 11px; letter-spacing: 0.06em; }
+
+.o-setup { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); align-items: end; }

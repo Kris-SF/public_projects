@@ -598,7 +598,10 @@ export function updateConfig(game, patch) {
   next.cardQty = clampInt(next.cardQty, 0, 25);
   next.openingPrice = clampInt(next.openingPrice, 1, 10000);
   next.options = !!next.options;
-  next.optionRules = { ...OPTION_DEFAULTS, ...(next.optionRules ?? {}) };
+  next.optionRules = {
+    ...OPTION_DEFAULTS, ...(game.config.optionRules ?? {}), ...(patch.optionRules ?? {}),
+  };
+  next.optionRules.expiryCount = clampInt(next.optionRules.expiryCount, 1, 3);
   if (game.players.length * next.cardQty > 100) {
     throw new Error(`${game.players.length} players x ${next.cardQty} cards exceeds the 100-card deck`);
   }
@@ -665,6 +668,7 @@ export function publicState(game) {
     round: game.round,
     maxRounds: game.config.maxRounds,
     cardQty: game.config.cardQty,
+    expiryCount: game.config.optionRules.expiryCount,
     mark: game.mark,
     openingPrice: game.config.openingPrice,
     // The options board is public in full. Between indicate and reveal a house
@@ -676,6 +680,11 @@ export function publicState(game) {
       tables: expiryTables(game.round, game.config.maxRounds, game.config.optionRules)
         .map((t) => ({ ...t, strikes: strikeGrid(game.mark, game.config.optionRules) })),
       orders: game.options.orders,
+      marks: game.options.marks,
+      // Only contracts carrying a house order can clear — the auction runs one
+      // order at a time — so this is exactly the set worth quoting.
+      quotable: game.options.activeExpiry === null ? [] :
+        game.options.orders.filter((o) => o.expiry === game.options.activeExpiry),
     } : null,
     standings: standings(game),
     history: game.history,

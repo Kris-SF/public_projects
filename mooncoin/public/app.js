@@ -23,6 +23,7 @@ const ui = {
   qty: '',
   orderType: 'MARKET',
   cards: { up: 0, down: 0, multiply: 0, add: 0 },
+  quotes: {},          // contractKey -> { bidPx, bidQty, askPx, askQty }, being typed
   rolling: false,
   name: '',
   joinCode: '',
@@ -261,6 +262,7 @@ function apply(body) {
   if (ui.lastRound !== null && ui.lastRound !== body.state.round) {
     ui.qty = '';
     ui.cards = { up: 0, down: 0, multiply: 0, add: 0 };
+    ui.quotes = {};
   }
   ui.lastRound = body.state.round;
 
@@ -305,6 +307,36 @@ const act = {
   },
 
   unconfirmCards() { net.send('unconfirmCards'); },
+
+  setQuote(key, field, value) {
+    const q = ui.quotes[key] ?? (ui.quotes[key] = {});
+    q[field] = value.replace(/[^0-9.]/g, '');
+  },
+
+  /** Only send contracts with something on them; blank rows are not orders. */
+  async submitQuotes() {
+    const st = S.state;
+    const quotes = [];
+    for (const [key, q] of Object.entries(ui.quotes)) {
+      const [expiry, kind, strike] = key.split('|');
+      if (Number(expiry) !== st.auction?.expiry) continue;
+      const num = (v) => (v === '' || v === undefined ? null : Number(v));
+      const row = {
+        expiry: Number(expiry), kind, strike: Number(strike),
+        bidPx: num(q.bidPx), bidQty: num(q.bidQty) ?? 0,
+        askPx: num(q.askPx), askQty: num(q.askQty) ?? 0,
+      };
+      if (row.bidPx === null && row.askPx === null) continue;
+      quotes.push(row);
+    }
+    if (await net.send('quotes', { quotes })) await net.send('confirmQuotes');
+  },
+
+  async passQuotes() {
+    if (await net.send('quotes', { quotes: [] })) await net.send('confirmQuotes');
+  },
+
+  unconfirmQuotes() { net.send('unconfirmQuotes'); },
 
   roll() {
     ui.rolling = true;
@@ -813,7 +845,14 @@ function wirePlayer() {
     b.onclick = () => act.bumpCard(b.dataset.card, Number(b.dataset.delta));
   });
 
+  document.querySelectorAll('[data-q]').forEach((el) => {
+    el.oninput = (e) => act.setQuote(el.dataset.q, el.dataset.f, e.target.value);
+  });
+
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+  on('submitQuotes', act.submitQuotes);
+  on('passQuotes', act.passQuotes);
+  on('unconfirmQuotes', act.unconfirmQuotes);
   on('submitOrder', act.submitOrder);
   on('pass', act.passOrder);
   on('unconfirmOrder', act.unconfirmOrder);
@@ -828,11 +867,17 @@ function wireHost(st, joinUrl) {
   on('start', () => {
     const rounds = document.getElementById('cfgRounds');
     const cards = document.getElementById('cfgCards');
+    const expiries = document.getElementById('cfgExpiries');
     if (rounds && cards) {
-      act.config({ maxRounds: Number(rounds.value), cardQty: Number(cards.value) });
+      act.config({
+        maxRounds: Number(rounds.value),
+        cardQty: Number(cards.value),
+        optionRules: { expiryCount: Number(expiries?.value) || 2 },
+      });
     }
     setTimeout(act.start, 60);   // let the config land before the deal
   });
+  on('cfgOptions', () => act.config({ options: !st.options }));
   on('force', act.force);
   on('roll', act.roll);
   on('reset', act.reset);
@@ -1029,6 +1074,181 @@ function lastRoundReplay(st, me) {
     </div>`;
 }
 
+// ===========================================================================
+// OPTIONS
+//
+// The board never shows what a contract is worth. Every price on screen was
+// discovered by the auction; a contract the auction has not priced shows a dash.
+// ===========================================================================
+
+const optKey = (o) => `${o.expiry}|${o.kind}|${o.strike}`;
+const optLabel = (o) => `${o.kind === 'call' ? 'Call' : 'Put'} ${o.strike} · R${o.expiry}`;
+
+/** The house's order on a contract: a question mark until its gate closes. */
+function houseCell(order) {
+  if (!order) return '<span class="o-none">·</span>';
+  if (order.side === null) return '<span class="o-ask">?</span>';
+  return `<span class="${order.side === 'BUY' ? 'up' : 'down'}">${order.side === 'BUY' ? 'B' : 'S'}${order.qty}</span>`;
+}
+
+/**
+ * One expiry's montage: calls left, strike spine centre, puts right, strikes
+ * increasing downward — the layout a real board uses.
+ */
+function montage(table, board) {
+  const orderAt = (kind, strike) => board.orders.find(
+    (o) => o.expiry === table.expiry && o.kind === kind && o.strike === strike);
+  const markAt = (kind, strike) => board.marks[`${table.expiry}|${kind}|${strike}`];
+
+  const rows = table.strikes.map((strike) => {
+    const atm = strike === board.anchor;
+    const pxCell = (kind) => {
+      const v = markAt(kind, strike);
+      return `<td class="num o-px">${v === undefined ? '<span class="o-none">—</span>' : v}</td>`;
+    };
+    const ordCell = (kind) => `<td class="o-side">${houseCell(orderAt(kind, strike))}</td>`;
+    // Mirrored around the spine: the order column outermost, the price against
+    // the strike, so the two sides read outward from the middle.
+    return `
+      <tr class="${atm ? 'o-atm' : ''}">
+        ${ordCell('call')}${pxCell('call')}
+        <td class="o-strike num">${strike}</td>
+        ${pxCell('put')}${ordCell('put')}
+      </tr>`;
+  }).join('');
+
+  return `
+    <table class="o-montage">
+      <thead>
+        <tr>
+          <th class="o-side">Ord</th><th class="num">Px</th>
+          <th class="num o-strike">Strike</th>
+          <th class="num">Px</th><th class="o-side">Ord</th>
+        </tr>
+        <tr class="o-kinds"><th colspan="2">Calls</th><th></th><th colspan="2">Puts</th></tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+/** Every live expiry, stacked. */
+function optionBoard(st) {
+  const b = st.optionBoard;
+  if (!b) return '';
+  return `
+    ${rule('Option board', `anchored ${b.anchor}`)}
+    <div class="o-tables">
+      ${b.tables.map((t) => `
+        <div class="o-table ${st.auction?.expiry === t.expiry ? 'live' : ''}">
+          <div class="o-cap">${esc(t.label)} <span class="dim">expires R${t.expiry}</span>
+            ${st.auction?.expiry === t.expiry ? '<span class="o-live">on the block</span>' : ''}</div>
+          ${montage(t, b)}
+        </div>`).join('')}
+    </div>`;
+}
+
+/**
+ * Quote entry for the expiry on the block.
+ *
+ * Only contracts carrying a house order are listed, because only those clear —
+ * the auction runs one house order at a time, so a quote anywhere else could
+ * never trade. Leave a side blank to quote one-way; leave everything blank and
+ * confirm to pass.
+ */
+function quoteTicket(st, me) {
+  const b = st.optionBoard;
+  const live = b?.quotable ?? [];
+
+  if (me.quotesReady) {
+    const n = (me.quotes ?? []).length;
+    return `
+      <div class="n-act done">
+        <div class="n-done">
+          <span class="strong">${n ? `${n} market${n === 1 ? '' : 's'} in` : 'Passed'}</span>
+          <span class="spacer"></span><span class="dim tiny">In</span>
+        </div>
+        <button id="unconfirmQuotes" class="wide">Pull them back</button>
+      </div>`;
+  }
+
+  const saved = new Map((me.quotes ?? []).map((q) => [optKey(q), q]));
+  const val = (o, f) => {
+    const q = saved.get(optKey(o)) ?? ui.quotes[optKey(o)];
+    const v = q?.[f];
+    return v === null || v === undefined ? '' : v;
+  };
+
+  const rows = live.map((o) => `
+    <div class="o-quote">
+      <div class="o-quote-cap">
+        <span class="${o.kind === 'call' ? 'up' : 'down'}">${optLabel(o)}</span>
+        <span class="spacer"></span><span class="o-ask">?</span>
+      </div>
+      <div class="o-quote-grid">
+        <input inputmode="decimal" placeholder="bid" aria-label="${optLabel(o)} bid"
+               data-q="${optKey(o)}" data-f="bidPx" value="${esc(val(o, 'bidPx'))}">
+        <input inputmode="numeric" placeholder="size" aria-label="${optLabel(o)} bid size"
+               data-q="${optKey(o)}" data-f="bidQty" value="${esc(val(o, 'bidQty'))}">
+        <input inputmode="decimal" placeholder="ask" aria-label="${optLabel(o)} ask"
+               data-q="${optKey(o)}" data-f="askPx" value="${esc(val(o, 'askPx'))}">
+        <input inputmode="numeric" placeholder="size" aria-label="${optLabel(o)} ask size"
+               data-q="${optKey(o)}" data-f="askQty" value="${esc(val(o, 'askQty'))}">
+      </div>
+    </div>`).join('');
+
+  return `
+    <div class="n-act">
+      ${live.length ? rows : '<p class="n-note">No orders on this expiry.</p>'}
+      <button class="primary n-go" id="submitQuotes">Confirm markets</button>
+      <button id="passQuotes" class="wide n-pass">Pass this expiry</button>
+      <p class="n-note">You are quoting into a <b>?</b> — which way the house is going, and
+        how big, is settled when the gate closes. Leave a side blank to quote one-way.</p>
+    </div>`;
+}
+
+/** The player's own option book: open contracts, then what has expired. */
+function optionBlotter(me, st) {
+  const open = me.optionPositions ?? [];
+  const settled = me.settledOptions ?? [];
+  const marks = st.optionBoard?.marks ?? {};
+
+  const net = new Map();
+  for (const p of open) {
+    const k = optKey(p);
+    const r = net.get(k) ?? { ...p, qty: 0, cost: 0 };
+    r.qty += p.qty; r.cost += p.premium * p.qty;
+    net.set(k, r);
+  }
+  const rows = [...net.values()].filter((r) => r.qty !== 0);
+
+  return `
+    ${rule('Your options', `${rows.length} open · ${settled.length} settled`)}
+    ${rows.length ? `<div class="scroll-x"><table>
+      <thead><tr><th>Contract</th><th class="num">Qty</th><th class="num">Avg</th>
+        <th class="num">Mark</th><th class="num">P/L</th></tr></thead>
+      <tbody>${rows.map((r) => {
+        const avg = r.cost / r.qty;
+        const mk = marks[optKey(r)];
+        const pl = mk === undefined ? 0 : (mk - avg) * r.qty;
+        return `<tr>
+          <td>${optLabel(r)}</td>
+          <td class="num ${cls(r.qty)}">${signed(r.qty)}</td>
+          <td class="num dim">${px(avg)}</td>
+          <td class="num">${mk === undefined ? '<span class="o-none">—</span>' : mk}</td>
+          <td class="num strong ${cls(pl)}">${mk === undefined ? '<span class="o-none">—</span>' : moneyHTML(pl)}</td>
+        </tr>`;
+      }).join('')}</tbody></table></div>`
+      : '<div class="n-waiting">Nothing open.</div>'}
+    ${settled.length ? `<div class="scroll-x"><table>
+      <thead><tr><th>Expired</th><th class="num">Qty</th><th class="num">Final</th><th class="num">Value</th></tr></thead>
+      <tbody>${settled.slice().reverse().map((s) => `<tr>
+        <td class="dim">${optLabel(s)}</td>
+        <td class="num ${cls(s.qty)}">${signed(s.qty)}</td>
+        <td class="num">${s.mark}</td>
+        <td class="num ${cls(s.value)}">${moneyHTML(s.value)}</td>
+      </tr>`).join('')}</tbody></table></div>` : ''}`;
+}
+
 function renderPlayer() {
   const st = S.state, me = S.me;
   if (!st || !me) {
@@ -1043,6 +1263,7 @@ function renderPlayer() {
   // Does the table need something from this player right now? Everything else
   // on screen steps back while it does.
   const owes = (st.phase === 'orders' && !me.ordersReady)
+    || (st.phase === 'auction' && !me.quotesReady)
     || (st.phase === 'cards' && !me.cardsReady);
 
   let action, cta;
@@ -1056,6 +1277,14 @@ function renderPlayer() {
                      `R${st.round} · ${st.seated - waiting.length}/${st.seated}`, true)
       : callToAction(`Order in — waiting on ${waiting.join(', ')}`,
                      `${st.seated - waiting.length}/${st.seated}`, false);
+  } else if (st.phase === 'auction') {
+    action = quoteTicket(st, me);
+    const waiting = st.auction.awaiting;
+    cta = me.quotesReady
+      ? callToAction(`Markets in — waiting on ${waiting.join(', ')}`,
+                     `${st.seated - waiting.length}/${st.seated}`, false)
+      : callToAction(`Your move — quote R${st.auction.expiry}`,
+                     `R${st.round} · ${st.seated - waiting.length}/${st.seated}`, true);
   } else if (st.phase === 'cards') {
     action = cardTicket(st, me);
     cta = owes
@@ -1088,6 +1317,8 @@ function renderPlayer() {
           <i>paid by takers, collected by resters</i>
         </div>` : ''}
 
+      ${st.options ? optionBlotter(me, st) : ''}
+
       ${rule('Your hand', `${me.hand.up + me.hand.down + me.hand.multiply + me.hand.add} left`)}
       <div class="n-hand">
         ${Object.keys(CARD_META).map((k) => `
@@ -1113,6 +1344,9 @@ function renderPlayer() {
       ${st.phase === 'orders' ? lastRoundReplay(st, me) : ''}
       ${cta}
       ${action}
+      ${/* Outside the dimmed block on purpose: this is what you are reading
+            while you quote, so it stays lit even when you owe the table. */ ''}
+      ${st.options ? optionBoard(st) : ''}
       ${secondary}
       <div class="n-foot">
         <span class="dim tiny">Seated as ${esc(me.name)}</span>
@@ -1239,6 +1473,8 @@ function renderDashboard(hostMode = false) {
               </tbody>
             </table></div>` : ''}
 
+          ${st.options ? optionBoard(st) : ''}
+
           ${st.history.length ? `${rule('Price path')}${historyTable(st)}` : ''}
         </div>
 
@@ -1253,6 +1489,17 @@ function renderDashboard(hostMode = false) {
                   <label class="field"><span>Cards each</span>
                     <input id="cfgCards" class="num" value="${st.cardQty}" inputmode="numeric"></label>
                 </div>
+                <div class="o-setup">
+                  <button id="cfgOptions" class="${st.options ? 'on' : ''}">
+                    Options ${st.options ? 'on' : 'off'}
+                  </button>
+                  <label class="field" style="margin:0">
+                    <span>Expiries</span>
+                    <input id="cfgExpiries" class="num" value="${st.expiryCount ?? 2}"
+                           inputmode="numeric" ${st.options ? '' : 'disabled'}>
+                  </label>
+                </div>
+                <p class="n-note">Each expiry is its own gate, so two is a longer round than one.</p>
                 <button class="primary n-go" id="start" ${st.seated < 1 ? 'disabled' : ''}>
                   ${st.seated < 1 ? 'Waiting for players' : `Open the market (${st.seated} seated)`}
                 </button>` : ''}
@@ -1270,6 +1517,10 @@ function renderDashboard(hostMode = false) {
                 <button class="danger" id="reset">Reset</button>
               </div>
             </div>` : ''}
+
+          ${st.phase === 'auction' ? `
+            ${rule(`Auction R${st.auction.expiry}`, `${st.auction.awaiting.length} of ${st.seated} still to quote`)}
+            <div class="n-pad">${waitingPills(st, st.auction.awaiting)}</div>` : ''}
 
           ${st.phase === 'orders' || st.phase === 'cards' ? `
             ${rule('Waiting on', `${gate.length} of ${st.seated}`)}
