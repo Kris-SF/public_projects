@@ -619,15 +619,30 @@ test('a fill writes both sides of the trade to the right blotters', () => {
   confirmQuotes(g, alice.id);
   confirmQuotes(g, bob.id);
 
-  const net = (p) => p.optionPositions.reduce((a, x) => a + x.qty, 0);
-  assert.equal(net(alice) + net(bob) <= 0, true, 'the house is long what the players are short');
-  assert.ok(alice.optionPositions.every((x) => x.qty < 0), 'alice only ever sold');
-  assert.ok(alice.optionLog.length > 0);
-  for (const pos of [...alice.optionPositions, ...bob.optionPositions]) {
-    assert.equal(pos.strike, 100);
-    assert.equal(pos.expiry, 1);
-    assert.equal(pos.round, 1);
+  // Assert against what actually cleared rather than guessing the house's side,
+  // which is a coin flip per contract: every trade must appear on both blotters.
+  const byId = new Map(g.players.map((p) => [p.id, p]));
+  const trades = g.options.cleared[0].results
+    .flatMap((r) => r.trades.map((t) => ({ ...t, contract: r })));
+  assert.ok(trades.length > 0, 'crossing quotes must produce something');
+
+  for (const t of trades) {
+    for (const [id, sign] of [[t.buyer, 1], [t.seller, -1]]) {
+      if (!id) continue;   // the house keeps no blotter
+      const p = byId.get(id);
+      assert.ok(
+        p.optionPositions.some((x) =>
+          x.qty === sign * t.qty && x.premium === t.price && x.round === 1
+          && x.strike === t.contract.strike && x.kind === t.contract.kind
+          && x.expiry === t.contract.expiry),
+        `${p.name} is missing their side of ${t.qty} @ ${t.price}`,
+      );
+      assert.equal(p.optionLog.length, p.optionPositions.length, 'log tracks the book');
+    }
   }
+
+  assert.ok(alice.optionPositions.every((x) => x.qty < 0), 'alice only ever offered');
+  assert.ok(bob.optionPositions.every((x) => x.qty > 0), 'bob only ever bid');
 });
 
 test('quotes are refused for the wrong expiry or a strike off the board', () => {
