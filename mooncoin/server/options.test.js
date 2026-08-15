@@ -13,7 +13,7 @@ import {
   OPTION_DEFAULTS, strikeGrid, isTradeable, expiryTables,
   makePosition, makeMarketOrder, makeQuote, isIndicated,
   rollupPositions, grossOptionInventory, intrinsic, settleExpiring,
-  interestOn, netWorth, contractKey,
+  optionPL, contractKey,
 } from './options.js';
 import { createGame, addPlayer, startGame, privateState, publicState } from './game.js';
 
@@ -61,8 +61,8 @@ test('TEST 6 — strikes float, positions lock', () => {
 
   // ...and still settles against $100.
   assert.equal(intrinsic(pos.kind, pos.strike, 116), 16);
-  const { cash } = settleExpiring([pos], 5, 116);
-  assert.equal(cash, 16, 'settles against its own locked strike, not the board');
+  const { realized } = settleExpiring([pos], 5, 116);
+  assert.equal(realized, 16 - 12, 'settles against its own locked strike, less premium');
 });
 
 test('a locked strike survives the grid moving away and back', () => {
@@ -72,8 +72,8 @@ test('a locked strike survives the grid moving away and back', () => {
   for (const anchor of [100, 107, 120, 95]) {
     assert.equal(pos.strike, 95, `unchanged with the board at ${anchor}`);
   }
-  // Short 2 puts struck 95, settling at 90: pays 5 each.
-  assert.equal(settleExpiring([pos], 5, 90).cash, -10);
+  // Short 2 puts struck 95 at $4, settling at 90: pays 5 each, keeps the premium.
+  assert.equal(settleExpiring([pos], 5, 90).realized, (5 - 4) * -2);
 });
 
 // --- §3 expiry tables -------------------------------------------------------
@@ -175,24 +175,25 @@ test('settlement pays longs, charges shorts, and clears the expiry', () => {
     makePosition({ playerId: 'p1', kind: 'call', strike: 120, expiry: 3, qty: -1, premium: 3, round: 2 }),
     makePosition({ playerId: 'p1', kind: 'call', strike: 100, expiry: 5, qty: 1, premium: 20, round: 2 }),
   ];
-  const { cash, settled, remaining } = settleExpiring(pos, 3, 130);
+  const { realized, settled, remaining } = settleExpiring(pos, 3, 130);
 
-  // Long 2 @ 100 → +60. Short 1 @ 120 → −10.
-  assert.equal(cash, 50);
+  // Long 2 @ 100 paid 10 → (30−10)×2 = +40. Short 1 @ 120 sold at 3 → (10−3)×−1 = −7.
+  assert.equal(realized, 33);
   assert.equal(settled.length, 2);
   assert.equal(remaining.length, 1, 'the R5 position is untouched');
   assert.equal(remaining[0].expiry, 5);
 });
 
-test('interest is charged on negative cash only, rounded down', () => {
-  assert.equal(interestOn(-340), 17, "the spec's worked example");
-  assert.equal(interestOn(-1), 0, 'rounds down to nothing');
-  assert.equal(interestOn(0), 0);
-  assert.equal(interestOn(1000), 0, 'a positive balance earns nothing');
-  assert.equal(interestOn(-1000, { ...OPTION_DEFAULTS, negativeCashRate: 0.1 }), 100);
+test('a long option expiring worthless loses its premium and no more', () => {
+  const long = makePosition({ playerId: 'p1', kind: 'call', strike: 100, expiry: 3, qty: 2, premium: 10, round: 1 });
+  assert.equal(settleExpiring([long], 3, 80).realized, -20);
+
+  // And the seller of that same call keeps exactly what the buyer lost.
+  const short = makePosition({ playerId: 'p2', kind: 'call', strike: 100, expiry: 3, qty: -2, premium: 10, round: 1 });
+  assert.equal(settleExpiring([short], 3, 80).realized, 20);
 });
 
-test('net worth includes marked options, and carries unmarked ones at zero', () => {
+test('open P/L marks against the auction, and unmarked positions are flat', () => {
   const positions = [
     makePosition({ playerId: 'p1', kind: 'call', strike: 100, expiry: 5, qty: 2, premium: 10, round: 1 }),
     makePosition({ playerId: 'p1', kind: 'put', strike: 90, expiry: 5, qty: 1, premium: 4, round: 1 }),
@@ -200,11 +201,12 @@ test('net worth includes marked options, and carries unmarked ones at zero', () 
   const marks = new Map([[contractKey({ expiry: 5, kind: 'call', strike: 100 }), 15]]);
 
   assert.equal(
-    netWorth({ cash: 500, shares: 3, mark: 110, positions, marks }),
-    500 + 330 + 30,
-    'the unmarked put contributes nothing rather than an invented value',
+    optionPL(positions, marks),
+    (15 - 10) * 2,
+    'the unmarked put is flat, not a total loss',
   );
-  assert.equal(netWorth({ cash: 1000, shares: 0, mark: 100 }), 1000, 'no options, no change');
+  assert.equal(optionPL(positions), 0, 'no marks at all means no P/L yet');
+  assert.equal(optionPL([]), 0);
 });
 
 // --- the toggle -------------------------------------------------------------
@@ -221,37 +223,43 @@ test('options off leaves the stock game exactly as it was', () => {
   const [p] = g.players;
 
   assert.equal(g.options, null, 'no options container');
-  assert.equal(p.cash, undefined, 'no cash in the stock-only game');
   assert.equal(p.optionPositions, undefined);
 
   const me = privateState(g, p.id).me;
-  for (const key of ['cash', 'optionPositions', 'optionLog', 'quotes']) {
+  for (const key of ['optionPositions', 'optionLog', 'quotes']) {
     assert.ok(!(key in me), `${key} must not appear in the stock-only payload`);
   }
   assert.equal(publicState(g).options, false);
 });
 
-test('options on adds cash and a private book, and nothing to the public state', () => {
+test('there is no cash anywhere, in either mode', () => {
+  for (const options of [false, true]) {
+    const g = seatedGame({ options });
+    assert.equal(g.players[0].cash, undefined);
+    assert.equal('cash' in privateState(g, g.players[0].id).me, false);
+    assert.equal(JSON.stringify(publicState(g)).includes('cash'), false);
+  }
+});
+
+test('options on adds a private book, and nothing to the public state', () => {
   const g = seatedGame({ options: true });
   const [p] = g.players;
 
-  assert.equal(p.cash, 1000, 'the spec\'s starting balance');
   assert.deepEqual(p.optionPositions, []);
   assert.ok(g.options, 'the options container exists');
 
   const me = privateState(g, p.id).me;
-  assert.equal(me.cash, 1000);
+  assert.deepEqual(me.optionPositions, []);
   assert.deepEqual(me.quotes, []);
 
-  // Nothing about anyone's book, cash or quotes leaks into the shared payload.
+  // Nothing about anyone's book or quotes leaks into the shared payload.
   const pub = JSON.stringify(publicState(g));
-  assert.equal(pub.includes('cash'), false);
   assert.equal(pub.includes('quote'), false);
   assert.equal(pub.includes('optionPosition'), false);
 });
 
-test('the starting balance is configurable', () => {
-  const g = seatedGame({ options: true, optionRules: { startingCash: 2500 } });
-  assert.equal(g.players[0].cash, 2500);
-  assert.equal(g.config.optionRules.strikeIncrement, 5, 'unspecified rules keep their defaults');
+test('rules are configurable, and unspecified ones keep their defaults', () => {
+  const g = seatedGame({ options: true, optionRules: { strikeIncrement: 10 } });
+  assert.equal(g.config.optionRules.strikeIncrement, 10);
+  assert.equal(g.config.optionRules.strikeDepth, OPTION_DEFAULTS.strikeDepth);
 });

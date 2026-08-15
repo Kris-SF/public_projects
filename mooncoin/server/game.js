@@ -109,9 +109,7 @@ export function startGame(game, rng = Math.random) {
     p.hand = { ...hands[i] };
     p.initialHand = { ...hands[i] };
     p.fills = [];
-    // Cash exists only in the options game. The stock-only game scores on
-    // mark-to-market P/L and has never had a balance to spend.
-    if (game.config.options) Object.assign(p, createPlayerOptions(game.config.optionRules));
+    if (game.config.options) Object.assign(p, createPlayerOptions());
   });
 
   game.options = game.config.options ? createOptionsState() : null;
@@ -381,7 +379,6 @@ export function resetGame(game) {
     p.hand = emptyHand();
     p.initialHand = emptyHand();
     p.fills = [];
-    delete p.cash;
     delete p.optionPositions;
     delete p.optionLog;
   }
@@ -485,10 +482,9 @@ export function privateState(game, playerId) {
       pendingCards: game.pendingCards[p.id] ?? null,
       ordersReady: !!game.ready.orders[p.id],
       cardsReady: !!game.ready.cards[p.id],
-      // Options are private by construction: a player's cash, book and quotes
-      // are theirs alone, and none of it appears in publicState.
+      // Options are private by construction: a player's book and quotes are
+      // theirs alone, and none of it appears in publicState.
       ...(game.config.options ? {
-        cash: p.cash,
         optionPositions: p.optionPositions ?? [],
         optionLog: p.optionLog ?? [],
         quotes: game.options?.quotes[p.id] ?? [],

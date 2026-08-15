@@ -12,6 +12,13 @@
  *
  * The layer is additive and inert unless `config.options` is on, so the
  * stock-only game keeps its exact behaviour and its exact payloads.
+ *
+ * There is no cash ledger. The spec carries one — a $1,000 opening balance, a
+ * 5% charge on negative balances, net worth as the score — but this game has
+ * never had a balance and scores on mark-to-market P/L, so options score the
+ * same way: an option position's P/L is (mark − premium) × qty, exactly as a
+ * stock fill's is (mark − price) × qty. The spec's leverage-and-interest
+ * mechanic goes with the cash it was built on.
  */
 
 /**
@@ -31,16 +38,14 @@ export const OPTION_DEFAULTS = {
   // §3 — the fixed-expiry tables that sit alongside the current round's table.
   fixedExpiries: [3, 5],
 
-  // §8 — settlement. Cash is options-only; see the note on `startingCash` below.
-  startingCash: 1000,
-  negativeCashRate: 0.05,
-
   // §10.1 — resolved: a market order with no quotes on the required side dies.
   unfilledMarketOrder: 'drop',
 
-  // §10.3 — resolved to the §5 tiebreak ladder. 'equal-split' matches the stock
-  // leg instead, and is the alternative the spec names.
-  tieBreak: 'size-cash-random',
+  // §10.3 — the spec's ladder is size, then cash, then random. There is no cash
+  // here, so the middle rung uses P/L, which is the resource this game actually
+  // keeps score in. 'size-random' drops the rung instead; 'equal-split' matches
+  // the stock leg's pro-rata, which is the alternative the spec names.
+  tieBreak: 'size-pl-random',
 
   // §10.4, §10.6, §10.7, §10.8 — genuinely open. Named, defaulted, unbuilt.
   priorityFee: false,
@@ -196,7 +201,7 @@ export function grossOptionInventory(positions, shares = 0, cfg = OPTION_DEFAULT
 }
 
 /**
- * Cash value of one contract at expiry.
+ * Value of one contract at expiry.
  *
  * Settlement arithmetic, not a valuation — this is only ever called once the
  * round's dice have resolved and the price has stopped moving. Nothing calls it
@@ -207,50 +212,42 @@ export function intrinsic(kind, strike, price) {
 }
 
 /**
+ * Open P/L on option positions, the mirror of the stock leg's position().
+ *
+ * A position is worth its premium until the auction says otherwise, so an
+ * unmarked contract contributes zero P/L rather than a total loss. That matters:
+ * marking an unpriced long to zero would book the whole premium as a loss the
+ * moment the auction skipped its strike, which is an artefact of the auction
+ * schedule rather than anything that happened in the market.
+ */
+export function optionPL(positions, marks = new Map()) {
+  return positions.reduce((a, p) => {
+    const mark = marks.get(contractKey(p)) ?? p.premium;
+    return a + (mark - p.premium) * p.qty;
+  }, 0);
+}
+
+/**
  * Settle everything expiring at `round` against the settled price.
  *
- * Longs receive, shorts pay, which the signed quantity handles on its own.
- * Returns the cash delta and the rows that should drop off the blotter.
+ * Longs collect, shorts pay, which the signed quantity handles on its own. The
+ * P/L booked is intrinsic less what was paid, so a long call that expires
+ * worthless loses exactly its premium and no more.
  */
 export function settleExpiring(positions, round, price) {
   const expiring = positions.filter((p) => p.expiry === round);
   const remaining = positions.filter((p) => p.expiry !== round);
-  let cash = 0;
-  const settled = [];
-  for (const r of rollupPositions(expiring)) {
-    const value = intrinsic(r.kind, r.strike, price) * r.qty;
-    cash += value;
-    settled.push({ ...r, price, value });
-  }
-  return { cash, settled, remaining };
-}
 
-/**
- * Interest owed on a negative balance, as a positive number to subtract.
- *
- * Rounded down, per the spec's own worked example: −$340 at 5% owes $17.
- * A non-negative balance earns nothing — this is a leverage cost, not a
- * savings account.
- */
-export function interestOn(cash, cfg = OPTION_DEFAULTS) {
-  if (cash >= 0) return 0;
-  const rate = cfg.negativeCashRate ?? OPTION_DEFAULTS.negativeCashRate;
-  return Math.floor(Math.abs(cash) * rate);
-}
+  const marks = new Map();
+  for (const p of expiring) marks.set(contractKey(p), intrinsic(p.kind, p.strike, price));
 
-/**
- * Net worth.
- *
- * The prototype omitted option value entirely and the spec calls that a gap, so
- * marked option positions are included here. `marks` maps contractKey to a mark
- * per contract; contracts with no mark contribute nothing, because the only
- * honest mark is one the auction produced. An unpriced position is carried at
- * zero rather than at a number the game invented.
- */
-export function netWorth({ cash, shares, mark, positions = [], marks = new Map() }) {
-  const options = rollupPositions(positions)
-    .reduce((a, r) => a + (marks.get(contractKey(r)) ?? 0) * r.qty, 0);
-  return cash + shares * mark + options;
+  const settled = rollupPositions(expiring).map((r) => ({
+    ...r,
+    price,
+    value: intrinsic(r.kind, r.strike, price) * r.qty,
+  }));
+
+  return { realized: optionPL(expiring, marks), settled, remaining };
 }
 
 // ---------------------------------------------------------------------------
@@ -267,11 +264,7 @@ export function createOptionsState() {
   };
 }
 
-/** The per-player fields the options layer adds. */
-export function createPlayerOptions(cfg = OPTION_DEFAULTS) {
-  return {
-    cash: cfg.startingCash ?? OPTION_DEFAULTS.startingCash,
-    optionPositions: [],
-    optionLog: [],
-  };
+/** The per-player fields the options layer adds. No balance — see the header. */
+export function createPlayerOptions() {
+  return { optionPositions: [], optionLog: [] };
 }
