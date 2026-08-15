@@ -30,17 +30,6 @@ const ui = {
   lastMark: null,
   lastRound: null,
   markFlash: null,
-  // 'classic' is the original look; 'next' is the dense player screen and the
-  // big-board dashboard. Set with ?ui=next, and remembered so it survives the
-  // navigation between screens.
-  skin: (() => {
-    const q = new URLSearchParams(location.search).get('ui');
-    if (q === 'next' || q === 'classic') {
-      localStorage.setItem('mooncoin:skin', q);
-      return q;
-    }
-    return localStorage.getItem('mooncoin:skin') ?? 'classic';
-  })(),
 };
 
 // --- Utilities -------------------------------------------------------------
@@ -58,7 +47,22 @@ const money = (n) => {
   return v < 0 ? `-$${s}` : `$${s}`;
 };
 
+/**
+ * The same amount with the currency symbol set smaller and dimmer, so $112
+ * reads as money rather than as a four-character string.
+ *
+ * Display figures only. In a table the symbol is doing column work, and
+ * shrinking it just makes the column ragged.
+ */
+const moneyHTML = (n) => money(n).replace('$', '<span class="cur">$</span>');
+
 const px = (n, d = 2) => (n === null || n === undefined ? '—' : Number(n).toFixed(d));
+
+const ordinal = (n) => {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
+};
 
 const seatKey = (code) => `mooncoin:player:${code}`;
 
@@ -185,9 +189,12 @@ const net = {
       const res = await fetch(`/api/game?${qs}`, { cache: 'no-store' });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
-      apply(body);
+      // Connected before the fold, not after: apply() renders, and an unchanged
+      // payload will not redraw again — so setting the flag afterwards leaves
+      // the status pill reading Reconnecting over a screen that is plainly live.
       this.failures = 0;
       S.connected = true;
+      apply(body);
     } catch (err) {
       this.failures++;
       // One dropped poll is noise; a run of them is worth showing.
@@ -317,12 +324,6 @@ const act = {
   },
   config(patch) { return net.send('config', { config: patch }); },
 
-  toggleSkin() {
-    ui.skin = ui.skin === 'next' ? 'classic' : 'next';
-    localStorage.setItem('mooncoin:skin', ui.skin);
-    render();
-  },
-
   copy(text, label) {
     navigator.clipboard?.writeText(text).then(() => {
       S.notice = `${label} copied`;
@@ -336,16 +337,18 @@ const act = {
 
 function topbar(extra = '') {
   const st = S.state;
-  const conn = S.connected
-    ? '<span class="chip live">LIVE</span>'
-    : '<span class="chip off">RECONNECTING</span>';
-  const round = st && st.round > 0 ? `R${st.round}/${st.maxRounds}` : '—';
+  // Off a table there is nothing to be connected to, so the status says nothing
+  // rather than crying reconnecting at the front door.
+  const conn = !S.code ? ''
+    : S.connected ? '<span class="chip live">Live</span>'
+    : '<span class="chip off">Reconnecting</span>';
+  const round = st && st.round > 0 ? `R${st.round}/${st.maxRounds}` : '';
   return `
     <div class="topbar">
-      <span>MOONCOIN</span>
-      <span class="chip">${esc(S.code ?? '')}</span>
-      <span>${esc(round)}</span>
-      <span>${esc(st ? PHASE_LABEL[st.phase] : '')}</span>
+      <span class="brand">Mooncoin</span>
+      ${S.code ? `<span class="chip">${esc(S.code)}</span>` : ''}
+      ${round ? `<span>${esc(round)}</span>` : ''}
+      <span class="phase">${esc(st ? PHASE_LABEL[st.phase] : '')}</span>
       ${extra}
       <span class="spacer"></span>
       ${conn}
@@ -365,6 +368,39 @@ function alerts() {
     ${ephemeral}
     ${S.error ? `<div class="err">${esc(S.error)}</div>` : ''}
     ${S.notice ? `<div class="ok">${esc(S.notice)}</div>` : ''}`;
+}
+
+/** The mark's path so far — the opening print, then every settled round. */
+const markPath = (st) => [st.openingPrice, ...st.history.map((h) => h.mark)];
+
+/**
+ * A price path beside the price.
+ *
+ * The single most useful thing you can put next to a number is where it has
+ * been, and at this size it costs nothing. It also teaches the regime rule
+ * quietly, because a streak is visible as a shape before anyone works out the
+ * arithmetic behind it.
+ */
+function sparkline(values, w = 52, h = 20) {
+  const pts = values.slice(-6);
+  if (pts.length < 2) return '';
+
+  const lo = Math.min(...pts);
+  const span = Math.max(...pts) - lo || 1;
+  const xy = pts.map((v, i) => [
+    (i / (pts.length - 1)) * w,
+    h - 2 - ((v - lo) / span) * (h - 4),
+  ]);
+  const line = xy.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+  const [ex, ey] = xy[xy.length - 1];
+
+  return `
+    <svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+      <path d="${line} L${w} ${h} L0 ${h} Z" fill="rgba(131,140,255,.13)"/>
+      <path d="${line}" fill="none" stroke="#838CFF" stroke-width="1.5"
+            stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="${(h / 9).toFixed(1)}" fill="#838CFF"/>
+    </svg>`;
 }
 
 function ladder(book) {
@@ -387,25 +423,131 @@ function ladder(book) {
     </div>`;
 }
 
-function diceRow(st, dice = st.dice, live = true) {
-  const labels = ['Trend Die', 'Multiply/Add', 'D6 (A)', 'D6 (B)'];
-  const next = live ? st.rollStep : -1;
+/**
+ * The dice, decomposed.
+ *
+ * A die on its own tells you nothing — what matters is the roll plus whatever
+ * the cards and the regime added, measured against the threshold. And since
+ * that modifier is settled before anything is thrown, the requirement can be
+ * stated up front: knowing you need a 2 or better is worth far more than being
+ * told afterwards what happened.
+ */
+
+const DICE = [
+  {
+    cap: 'Trend die', mod: 'trend',
+    hit: 'UP', miss: 'DOWN',
+    hitMeans: 'price rises', missMeans: 'price falls',
+    hitClass: 'up', missClass: 'down',
+  },
+  {
+    cap: 'Volatility die', mod: 'mag',
+    hit: 'BIG MOVE', miss: 'SMALL MOVE',
+    hitMeans: 'size is A × B', missMeans: 'size is A + B',
+    hitClass: 'cyan', missClass: 'dim',
+  },
+  { cap: 'Size A', mod: null, means: 'feeds the size of the move' },
+  { cap: 'Size B', mod: null, means: 'feeds the size of the move' },
+];
+
+/** What this die must roll to land on the upside outcome. */
+function threshold(net) {
+  const need = 4 - net;              // engine: die + net > 3
+  if (need <= 1) return { certain: 'hit', need: 1 };
+  if (need > 6) return { certain: 'miss', need: 7 };
+  return { certain: null, need, chance: Math.round(((7 - need) / 6) * 100) };
+}
+
+/** One die: the roll, the arithmetic, and the plain-English consequence. */
+function dieCard(spec, value, net, state) {
+  const t = spec.mod ? threshold(net) : null;
+  const locked = value !== null && value !== undefined;
+  const hit = locked && t ? value >= t.need : null;
+
+  const klass = ['n-die', locked ? 'locked' : 'empty', state].filter(Boolean).join(' ');
+
+  // Not yet thrown: say what it needs, so the roll has stakes.
+  if (!locked) {
+    const ask = !t ? '<span class="dim">sets the size</span>'
+      : t.certain === 'hit' ? `<span class="${spec.hitClass}">locked in — any roll is ${spec.hit}</span>`
+      : t.certain === 'miss' ? `<span class="${spec.missClass}">locked in — any roll is ${spec.miss}</span>`
+      : `needs <b>${t.need}+</b> for <span class="${spec.hitClass}">${spec.hit}</span>`;
+    return `
+      <div class="${klass}">
+        <div class="n-die-cap">${spec.cap}</div>
+        <div class="n-pip">${state === 'rolling' ? '?' : '·'}</div>
+        <div class="n-die-ask">${ask}</div>
+        ${t && !t.certain && net !== 0 ? `<div class="n-die-mod">cards ${signed(net)}</div>` : ''}
+      </div>`;
+  }
+
+  // Thrown: show roll + modifier against the bar, then what it means.
+  if (!spec.mod) {
+    return `
+      <div class="${klass}">
+        <div class="n-die-cap">${spec.cap}</div>
+        <div class="n-pip">${value}</div>
+        <div class="n-die-ask dim">${spec.means}</div>
+      </div>`;
+  }
+
+  const total = value + net;
   return `
-    <div class="dice">
-      ${dice.map((d, i) => {
-        const locked = d !== null;
-        const isNext = live && !locked && i === next && st.phase === 'rolling';
-        const tumbling = isNext && ui.rolling;
-        const klass = ['die', locked ? 'locked' : 'empty', isNext ? 'next' : '', tumbling ? 'rolling' : '']
-          .filter(Boolean).join(' ');
-        return `
-          <div class="${klass}">
-            <div class="cap">${labels[i]}</div>
-            <div class="pip">${locked ? d : tumbling ? '?' : '·'}</div>
-            <div class="cap">${locked ? 'LOCKED' : isNext ? 'NEXT' : ''}</div>
-          </div>`;
-      }).join('')}
+    <div class="${klass} ${hit ? spec.hitClass : spec.missClass}">
+      <div class="n-die-cap">${spec.cap}</div>
+      <div class="n-pip">${value}</div>
+      ${/* Two consistent framings exist and mixing them is nonsense: either the
+           raw die against an adjusted bar, or the adjusted total against the
+           fixed bar of 3. Pre-roll uses the first ("needs 3+ to roll"), because
+           that is the question you are asking. Here we use the second. */ ''}
+      <div class="n-die-sum">
+        ${value}${net === 0 ? '' : ` <span class="${cls(net)}">${signed(net)}</span> = <b>${total}</b>`}
+        <i>vs 3</i>
+      </div>
+      <div class="n-die-verdict ${hit ? spec.hitClass : spec.missClass}">
+        ${hit ? spec.hit : spec.miss}
+      </div>
+      <div class="n-die-ask dim">${hit ? spec.hitMeans : spec.missMeans}</div>
     </div>`;
+}
+
+/**
+ * The full board. `view` carries the dice, the modifiers that were in force,
+ * and — once the round has settled — the outcome, so the same component serves
+ * the live roll and the post-mortem.
+ */
+function diceBoard(view) {
+  const { dice, net, live, rollStep, resolved, priorMark, yours } = view;
+
+  const cards = DICE.map((spec, i) => {
+    const value = dice[i];
+    const isNext = live && value === null && i === rollStep;
+    const state = isNext ? (ui.rolling ? 'rolling' : 'next') : '';
+    const mod = spec.mod ? (net?.[spec.mod] ?? 0) : 0;
+    return dieCard(spec, value, mod, state);
+  }).join('');
+
+  let summary = '';
+  if (resolved) {
+    const { trend, type, chg } = resolved;
+    const [, , a, b] = dice;
+    const sum = type === 'MULTIPLY' ? `${a} × ${b} = ${a * b}` : `${a} + ${b} = ${a + b}`;
+    summary = `
+      <div class="n-outcome ${cls(chg)}">
+        <span class="${trend > 0 ? 'up' : 'down'}">${trend > 0 ? 'UP' : 'DOWN'}</span>
+        <span class="dim">·</span>
+        <span>${type === 'MULTIPLY' ? 'BIG MOVE' : 'SMALL MOVE'}</span>
+        <span class="dim">${sum}</span>
+        <span class="spacer"></span>
+        <b>${signed(chg)}</b>
+        <span class="dim">${priorMark} →</span>
+        <b>${priorMark + chg}</b>
+        ${yours !== null && yours !== undefined && yours !== 0
+          ? `<span class="n-yours ${cls(yours)}">${yours > 0 ? '+' : ''}${moneyHTML(yours)} to you</span>` : ''}
+      </div>`;
+  }
+
+  return `<div class="n-dice">${cards}</div>${summary}`;
 }
 
 function waitingPills(st, list) {
@@ -457,7 +599,7 @@ function historyTable(st) {
       <td class="num dim">${h.dice.join(' ')}</td>
       <td class="num ${cls(h.net.trend)}">${signed(h.net.trend)}</td>
       <td class="num ${cls(h.net.mag)}">${signed(h.net.mag)}</td>
-      <td>${h.type === 'MULTIPLY' ? '×' : '+'}</td>
+      <td class="${h.type === 'MULTIPLY' ? 'cyan' : 'dim'}">${h.type === 'MULTIPLY' ? 'BIG' : 'SMALL'}</td>
       <td class="num strong ${cls(h.chg)}">${signed(h.chg)}</td>
       <td class="num strong">${h.mark}</td>
     </tr>`).join('');
@@ -469,7 +611,9 @@ function historyTable(st) {
           <th class="num">R</th><th class="num">LB</th><th class="num">MB</th>
           <th class="num">IMB</th><th class="num">MO</th><th class="num">LO</th>
           <th class="num">Print</th><th class="num">Dice</th>
-          <th class="num">Trend</th><th class="num">Mag</th><th>Type</th>
+          ${/* These two are the card-and-regime modifiers fed to each die, not
+               outcomes — named for the dice they push so the link is obvious. */ ''}
+          <th class="num">Trend&plusmn;</th><th class="num">Vol&plusmn;</th><th>Move</th>
           <th class="num">Chg</th><th class="num">Mark</th>
         </tr></thead>
         <tbody>${rows}</tbody>
@@ -480,33 +624,6 @@ function historyTable(st) {
 function tape(st) {
   return `<div class="tape">${st.log.slice().reverse().map((l) => `
     <div><span class="t">R${l.round}</span>${esc(l.text)}</div>`).join('')}</div>`;
-}
-
-function markPanel(st) {
-  const last = st.history[st.history.length - 1];
-  const chg = last?.chg ?? 0;
-  return `
-    <div class="panel">
-      <header>Mooncoin <span class="spacer"></span><span class="note">Opened ${st.openingPrice}</span></header>
-      <div class="tiles">
-        <div class="readout ${ui.markFlash ?? ''}">
-          <div class="label">Mark</div>
-          <div class="value">${st.mark}</div>
-        </div>
-        <div class="readout">
-          <div class="label">Last Change</div>
-          <div class="value ${cls(chg)}">${st.history.length ? signed(chg) : '—'}</div>
-        </div>
-        <div class="readout">
-          <div class="label">Last Print</div>
-          <div class="value">${last?.print ?? '—'}</div>
-        </div>
-        <div class="readout">
-          <div class="label">Round</div>
-          <div class="value">${st.round || '—'}<span class="dim" style="font-size:14px">/${st.maxRounds}</span></div>
-        </div>
-      </div>
-    </div>`;
 }
 
 // --- Home ------------------------------------------------------------------
@@ -623,102 +740,22 @@ function renderJoin() {
 
 // --- Player terminal -------------------------------------------------------
 
-function orderTicket(st, me) {
-  if (me.ordersReady) {
-    const o = me.pendingOrder;
-    const side = o.qty > 0 ? 'BUY' : o.qty < 0 ? 'SELL' : 'PASS';
-    return `
-      <div class="body">
-        <div class="banner">Order confirmed</div>
-        <div class="tiles" style="border:1px solid var(--rule);border-top:none">
-          <div class="readout"><div class="label">Side</div><div class="value ${o.qty > 0 ? 'up' : o.qty < 0 ? 'down' : 'dim'}">${side}</div></div>
-          <div class="readout"><div class="label">Qty</div><div class="value">${Math.abs(o.qty)}</div></div>
-          <div class="readout"><div class="label">Type</div><div class="value">${o.type}</div></div>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <button id="unconfirmOrder">Pull it back</button>
-          <span class="dim">Waiting on ${st.awaitingOrders.length ? esc(st.awaitingOrders.join(', ')) : 'nobody — opening now'}</span>
-        </div>
-      </div>`;
-  }
-
-  const e = orderEconomics(st);
-
-  return `
-    <div class="body">
-      <div class="split" style="margin-bottom:6px">
-        <button class="buy ${ui.side === 'BUY' ? 'on' : ''}" data-side="BUY">Buy</button>
-        <button class="sell ${ui.side === 'SELL' ? 'on' : ''}" data-side="SELL">Sell</button>
-      </div>
-      <label class="field">
-        <span>Quantity</span>
-        <input id="qty" class="num" inputmode="numeric" autocomplete="off" placeholder="0" value="${esc(ui.qty)}">
-      </label>
-      <div class="split" style="margin-bottom:8px">
-        <button class="${ui.orderType === 'MARKET' ? 'on' : ''}" data-otype="MARKET">Market</button>
-        <button class="${ui.orderType === 'LIMIT' ? 'on' : ''}" data-otype="LIMIT">Limit</button>
-      </div>
-      <div class="tiles" style="border:1px solid var(--rule);margin-bottom:8px">
-        <div class="readout">
-          <div class="label">${e.fillsLabel}</div>
-          <div class="value">${e.fillsValue}<span class="dim" style="font-size:12px"> ${e.fillsNote}</span></div>
-        </div>
-        <div class="readout">
-          <div class="label">${e.costLabel}</div>
-          <div class="value ${e.costClass}">${e.costValue}</div>
-        </div>
-      </div>
-      <p class="dim tiny" style="margin:0 0 8px">${e.note}</p>
-      <div class="split">
-        <button id="pass">Pass</button>
-        <button class="primary" id="submitOrder">Confirm</button>
-      </div>
-    </div>`;
-}
-
-function cardTicket(st, me) {
-  if (me.cardsReady) {
-    const c = me.pendingCards ?? { up: 0, down: 0, multiply: 0, add: 0 };
-    const total = Object.values(c).reduce((a, b) => a + b, 0);
-    return `
-      <div class="body">
-        <div class="banner">Cards confirmed</div>
-        <div class="body center dim" style="padding:10px 0">
-          ${total === 0 ? 'Holding everything back this round.'
-            : Object.entries(c).filter(([, n]) => n > 0)
-                .map(([k, n]) => `${n}× ${CARD_META[k].glyph}`).join('  ')}
-        </div>
-        <div class="row">
-          <button id="unconfirmCards">Take them back</button>
-          <span class="dim">Waiting on ${st.awaitingCards.length ? esc(st.awaitingCards.join(', ')) : 'nobody'}</span>
-        </div>
-      </div>`;
-  }
-
-  return `
-    <div class="body">
-      <div class="cardgrid">
-        ${Object.keys(CARD_META).map((k) => {
-          const held = me.hand[k];
-          const picked = ui.cards[k] ?? 0;
-          return `
-            <div class="card ${k} ${held === 0 ? 'spent' : ''}">
-              <div class="glyph">${CARD_META[k].glyph}</div>
-              <div class="name">${CARD_META[k].name}</div>
-              <div class="held">${held - picked} left</div>
-              <div class="picked">${picked}</div>
-              <div class="stepper">
-                <button data-card="${k}" data-delta="-1" ${picked === 0 ? 'disabled' : ''}>−</button>
-                <button data-card="${k}" data-delta="1" ${picked >= held ? 'disabled' : ''}>+</button>
-              </div>
-            </div>`;
-        }).join('')}
-      </div>
-      <p class="dim tiny" style="margin:8px 0">
-        ↑/↓ push the trend die. ×/+ push the magnitude die. Everything is spent whether it lands or not.
-      </p>
-      <button class="primary wide" id="submitCards">Confirm cards</button>
-    </div>`;
+/**
+ * Did this fill pay the print, or collect it?
+ *
+ * Measured against the mark the round opened on — the number the print was
+ * struck from. Buying above it is slippage paid; selling above it is edge
+ * collected. Positive is always good for the holder of the fill, whichever
+ * side they were on.
+ *
+ * A fill in the round currently being played has not settled yet, so there is
+ * no history row for it; the live mark is still the pre-dice mark, which is
+ * exactly the right reference.
+ */
+function fillEdge(fill) {
+  const opened = S.state.history.find((h) => h.round === fill.round)?.priorMark ?? S.state.mark;
+  const perShare = (opened - fill.price) * Math.sign(fill.qty);
+  return { perShare, dollars: perShare * Math.abs(fill.qty) };
 }
 
 function blotter(me) {
@@ -727,138 +764,30 @@ function blotter(me) {
     <div class="scroll-x">
       <table>
         <thead><tr>
-          <th class="num">R</th><th class="num">Qty</th><th class="num">Price</th><th class="num">P/L</th>
+          <th class="num">R</th><th class="num">Qty</th><th class="num">Price</th>
+          <th class="num">Edge/Slip</th><th class="num">P/L</th>
         </tr></thead>
         <tbody>${me.fills.slice().reverse().map((f) => {
           const pl = (S.state.mark - f.price) * f.qty;
+          const e = fillEdge(f);
           return `<tr>
             <td class="num dim">${f.round}</td>
             <td class="num ${cls(f.qty)}">${signed(f.qty)}</td>
             <td class="num">${f.price}</td>
+            <td class="num ${cls(e.perShare)}">${
+              e.perShare === 0 ? 'flat'
+                : `${signed(e.perShare)}<span class="dim"> · ${e.dollars > 0 ? '+' : ''}${money(e.dollars)}</span>`
+            }</td>
             <td class="num ${cls(pl)}">${money(pl)}</td>
           </tr>`;
         }).join('')}</tbody>
       </table>
+    </div>
+    <div class="n-legend">
+      <span class="up">Positive</span> is edge — you rested and the print came to you.
+      <span class="down">Negative</span> is slippage — you crossed and paid for it.
+      Measured against the mark the round opened on.
     </div>`;
-}
-
-function renderPlayer() {
-  const st = S.state;
-  const me = S.me;
-  if (!st || !me) {
-    app.innerHTML = `${topbar()}<div class="wrap"><div class="banner wait blink">Connecting</div>${alerts()}</div>`;
-    return;
-  }
-
-  const rank = st.standings.findIndex((p) => p.id === me.id) + 1;
-  const lastRound = st.history[st.history.length - 1];
-
-  let ticket;
-  if (st.phase === 'lobby') {
-    ticket = `<div class="body"><div class="banner wait blink">Waiting for the host to open</div>
-      <p class="dim center" style="margin:10px 0 0">${st.seated} seated</p></div>`;
-  } else if (st.phase === 'orders') {
-    ticket = orderTicket(st, me);
-  } else if (st.phase === 'cards') {
-    ticket = cardTicket(st, me);
-  } else if (st.phase === 'rolling') {
-    ticket = `<div class="body">${diceRow(st)}
-      <p class="center dim" style="margin:8px 0 0">${st.rollStep}/4 locked — host is rolling</p></div>`;
-  } else {
-    const winner = st.standings[0];
-    ticket = `<div class="body">
-      <div class="banner">Market closed</div>
-      <div class="readout center" style="margin-top:10px">
-        <div class="label">Winner</div>
-        <div class="value">${esc(winner?.name ?? '—')}</div>
-        <div class="dim">${winner ? money(winner.pl) : ''}</div>
-      </div></div>`;
-  }
-
-  app.innerHTML = `
-    ${topbar(`<span class="chip">${esc(me.name)}</span>`)}
-    <div class="wrap">
-      ${alerts()}
-      <div class="tiles panel">
-        <div class="readout ${ui.markFlash ?? ''}">
-          <div class="label">Mark</div><div class="value">${st.mark}</div>
-        </div>
-        <div class="readout">
-          <div class="label">Position</div><div class="value ${cls(me.shares)}">${signed(me.shares)}</div>
-        </div>
-        <div class="readout">
-          <div class="label">Avg Price</div><div class="value">${me.avgPrice === null ? '—' : px(me.avgPrice)}</div>
-        </div>
-        <div class="readout">
-          <div class="label">P/L</div><div class="value ${cls(me.pl)}">${money(me.pl)}</div>
-        </div>
-        <div class="readout">
-          <div class="label">Rank</div><div class="value">${rank || '—'}<span class="dim" style="font-size:13px">/${st.seated}</span></div>
-        </div>
-      </div>
-
-      <div class="cols">
-        <div class="panel">
-          <header>
-            ${st.phase === 'cards' ? 'Cards' : 'Order Ticket'}
-            <span class="spacer"></span>
-            <span class="note">${PHASE_LABEL[st.phase]}</span>
-          </header>
-          ${ticket}
-        </div>
-
-        <div class="stack">
-          ${st.reveal ? `
-            <div class="panel">
-              <header>Round ${st.round} Book <span class="spacer"></span>
-                <span class="note">printed ${st.reveal.price}</span></header>
-              ${ladder(st.reveal)}
-              ${st.reveal.houseResidual > 0 ? `<div class="body dim tiny">House absorbed ${st.reveal.houseResidual}</div>` : ''}
-            </div>` : ''}
-          <div class="panel">
-            <header>Blotter <span class="spacer"></span><span class="note">${me.fills.length} fills</span></header>
-            ${blotter(me)}
-          </div>
-          <div class="panel">
-            <header>Hand</header>
-            <div class="body">
-              <div class="cardgrid">
-                ${Object.keys(CARD_META).map((k) => `
-                  <div class="card ${k} ${me.hand[k] === 0 ? 'spent' : ''}">
-                    <div class="glyph">${CARD_META[k].glyph}</div>
-                    <div class="held">${me.hand[k]}</div>
-                  </div>`).join('')}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="cols">
-        <div class="panel">
-          <header>Standings</header>
-          ${standingsTable(st, { meId: me.id })}
-        </div>
-        <div class="panel">
-          <header>Tape</header>
-          ${tape(st)}
-        </div>
-      </div>
-
-      ${lastRound ? `
-        <div class="panel">
-          <header>Round History</header>
-          ${historyTable(st)}
-        </div>` : ''}
-
-      <div class="row" style="justify-content:center;padding:4px 0">
-        <span class="dim tiny">Seated as ${esc(me.name)}</span>
-        <a class="dim tiny" href="/${esc(st.code)}?new=1">Join as someone else</a>
-        <button class="ghost tiny" id="skin">New layout</button>
-      </div>
-    </div>`;
-
-  wirePlayer();
 }
 
 function wirePlayer() {
@@ -890,188 +819,9 @@ function wirePlayer() {
   on('unconfirmOrder', act.unconfirmOrder);
   on('submitCards', act.submitCards);
   on('unconfirmCards', act.unconfirmCards);
-  on('skin', act.toggleSkin);
 }
 
 // --- Dashboard -------------------------------------------------------------
-
-function renderDashboard(hostMode = false) {
-  const st = S.state;
-  if (!st) {
-    app.innerHTML = `${topbar()}<div class="wrap"><div class="banner wait blink">Connecting</div>${alerts()}</div>`;
-    return;
-  }
-
-  const joinUrl = `${location.origin}/${st.code}`;
-  const gateList = st.phase === 'orders' ? st.awaitingOrders
-    : st.phase === 'cards' ? st.awaitingCards : [];
-
-  // Between rounds the live slots are empty. Rather than blank three panels,
-  // fall back to the last settled round — a terminal shows the last print, it
-  // does not go dark.
-  const last = st.history[st.history.length - 1];
-  const liveBook = !!st.reveal;
-  const book = st.reveal ?? (last ? {
-    limitBid: last.limitBid, marketBid: last.marketBid, imbalance: last.imbalance,
-    marketOffer: last.marketOffer, limitOffer: last.limitOffer,
-    pressure: last.pressure, absorbed: last.absorbed,
-    price: last.print, houseResidual: last.houseResidual,
-  } : null);
-  const bookRound = liveBook ? st.round : last?.round;
-
-  const liveDice = st.dice.some((d) => d !== null);
-  const dice = liveDice ? st.dice : (last?.dice ?? null);
-  const diceRound = liveDice ? st.round : last?.round;
-
-  const liveNet = !!st.net;
-  const net = st.net ?? (last ? { cards: last.cards, regime: last.regime, plays: last.plays } : null);
-  const netRound = liveNet ? st.round : last?.round;
-
-  const controls = hostMode ? `
-    <div class="panel">
-      <header>Host Console <span class="spacer"></span>
-        <span class="note">${PHASE_LABEL[st.phase]}</span></header>
-      <div class="body stack">
-        ${st.phase === 'lobby' ? `
-          <div class="split">
-            <label class="field">
-              <span>Rounds</span>
-              <input id="cfgRounds" class="num" value="${st.maxRounds}" inputmode="numeric">
-            </label>
-            <label class="field">
-              <span>Cards each</span>
-              <input id="cfgCards" class="num" value="${st.cardQty}" inputmode="numeric">
-            </label>
-          </div>
-          <button class="primary wide lg" id="start" ${st.seated < 1 ? 'disabled' : ''}>
-            ${st.seated < 1 ? 'Waiting for players' : `Open the market (${st.seated} seated)`}
-          </button>` : ''}
-
-        ${st.phase === 'orders' || st.phase === 'cards' ? `
-          <button class="wide" id="force">
-            Force the ${st.phase === 'orders' ? 'orders' : 'cards'} gate
-            ${gateList.length ? `— skips ${esc(gateList.join(', '))}` : ''}
-          </button>` : ''}
-
-        ${st.phase === 'rolling' ? `
-          <button class="primary wide lg" id="roll" ${ui.rolling ? 'disabled' : ''}>
-            ${ui.rolling ? 'Rolling…' : `Roll ${st.dieLabel ?? ''} (${st.rollStep + 1}/4)`}
-          </button>` : ''}
-
-        ${st.phase === 'complete' ? '<div class="banner">Market closed</div>' : ''}
-
-        <div class="row">
-          <button id="copyJoin">Copy join link</button>
-          <button id="openDash">Open dashboard</button>
-          <button class="danger" id="reset">Reset</button>
-          <button class="ghost" id="skin">New layout</button>
-        </div>
-        <div class="row">
-          ${/* One browser holds one seat per tab, so testing solo needs the ?new form. */ ''}
-          <button id="addSeat">Open an extra seat</button>
-          <span class="dim tiny">opens a tab that takes its own seat — for testing a table single-handed</span>
-        </div>
-      </div>
-    </div>` : '';
-
-  app.innerHTML = `
-    ${topbar()}
-    <div class="wrap ${hostMode ? '' : 'dashboard'}">
-      ${alerts()}
-      ${st.phase === 'lobby' ? `
-        <div class="panel">
-          <header>Table open — join at ${esc(location.host)}</header>
-          <div class="body center">
-            <div class="huge" style="letter-spacing:0.28em">${esc(st.code)}</div>
-            <div class="dim">${esc(joinUrl)}</div>
-            <div style="margin-top:14px">${waitingPills(st, st.standings.map((p) => p.name))}</div>
-          </div>
-        </div>` : ''}
-
-      ${markPanel(st)}
-
-      <div class="${hostMode ? 'cols-2-1' : 'cols'}">
-        <div class="stack">
-          <div class="panel">
-            <header>
-              ${book ? `Round ${bookRound} Book` : 'Order Book'}
-              <span class="spacer"></span>
-              <span class="note">${book
-                ? `printed ${book.price}${liveBook ? '' : ' · last settled'}`
-                : 'sealed until the gate trips'}</span>
-            </header>
-            ${ladder(book)}
-            ${book ? `<div class="body dim tiny">
-              Pressure ${signed(book.pressure ?? 0)} · book absorbed ${book.absorbed ?? 0} ·
-              imbalance ${signed(book.imbalance)} · slippage ${signed(impactOf(book.imbalance))}
-              ${book.houseResidual > 0 ? `· house left holding ${book.houseResidual}` : '· fully matched'}
-            </div>` : ''}
-          </div>
-
-          ${dice ? `
-            <div class="panel">
-              <header>Round ${diceRound} Dice <span class="spacer"></span>
-                <span class="note">${st.net
-                  ? `net trend ${signed(st.net.trend)} · net magnitude ${signed(st.net.mag)}`
-                  : last ? `${last.type === 'MULTIPLY' ? '×' : '+'} ${signed(last.chg)} to ${last.mark}` : ''}</span></header>
-              <div class="body">${diceRow(st, dice, liveDice)}</div>
-            </div>` : ''}
-
-          ${net ? `
-            <div class="panel">
-              <header>Round ${netRound} Cards <span class="spacer"></span>
-                <span class="note">${liveNet ? '' : 'last settled'}</span></header>
-              <div class="scroll-x">
-                <table>
-                  <thead><tr><th>Player</th><th class="num">↑</th><th class="num">↓</th>
-                    <th class="num">×</th><th class="num">+</th></tr></thead>
-                  <tbody>
-                    ${(net.plays ?? []).map((p) => `
-                      <tr><td>${esc(p.name)}</td>
-                        <td class="num ${p.up ? 'up' : 'dim'}">${p.up}</td>
-                        <td class="num ${p.down ? 'down' : 'dim'}">${p.down}</td>
-                        <td class="num ${p.multiply ? 'cyan' : 'dim'}">${p.multiply}</td>
-                        <td class="num ${p.add ? 'cyan' : 'dim'}">${p.add}</td></tr>`).join('')}
-                    <tr><td class="strong">CARDS</td>
-                      <td class="num strong" colspan="2">trend ${signed(net.cards.trend)}</td>
-                      <td class="num strong" colspan="2">mag ${signed(net.cards.mag)}</td></tr>
-                    <tr><td class="dim">REGIME</td>
-                      <td class="num dim" colspan="2">trend ${signed(net.regime.trend)}</td>
-                      <td class="num dim" colspan="2">mag ${signed(net.regime.mag)}</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>` : ''}
-        </div>
-
-        <div class="stack">
-          ${controls}
-          ${st.phase === 'orders' || st.phase === 'cards' ? `
-            <div class="panel">
-              <header>Waiting On <span class="spacer"></span>
-                <span class="note">${gateList.length} of ${st.seated}</span></header>
-              <div class="body">${waitingPills(st, gateList)}</div>
-            </div>` : ''}
-          <div class="panel">
-            <header>Standings</header>
-            ${/* Seats can only be removed in the lobby, so the control is only offered there. */ ''}
-            ${standingsTable(st, { host: hostMode && st.phase === 'lobby' })}
-          </div>
-          <div class="panel">
-            <header>Tape</header>
-            ${tape(st)}
-          </div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <header>Round History</header>
-        ${historyTable(st)}
-      </div>
-    </div>`;
-
-  if (hostMode) wireHost(st, joinUrl);
-}
 
 function wireHost(st, joinUrl) {
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
@@ -1089,7 +839,6 @@ function wireHost(st, joinUrl) {
   on('copyJoin', () => act.copy(joinUrl, 'Join link'));
   on('openDash', () => window.open(`/${st.code}#dashboard`, '_blank'));
   on('addSeat', () => window.open(`/${st.code}?new=1`, '_blank'));
-  on('skin', act.toggleSkin);
 
   document.querySelectorAll('[data-kick]').forEach((b) => {
     b.onclick = () => act.kick(b.dataset.kick, b.dataset.name);
@@ -1114,19 +863,48 @@ function rule(label, right = '') {
   return `<div class="n-rule"><span>${label}</span><span>${right}</span></div>`;
 }
 
-function nextStrip(st, me) {
-  const cell = (label, value, klass = '') => `
-    <div><div class="n-lab">${label}</div><div class="n-v ${klass}">${value}</div></div>`;
+/**
+ * The standing readout, with a second line under every figure.
+ *
+ * Nothing here is newly computed — long/short, the fill count and the rank are
+ * all on screen already, further down. Bringing them up means the strip answers
+ * "how am I doing" without a scroll.
+ */
+function positionStrip(st, me) {
+  const rank = st.standings.findIndex((p) => p.id === me.id) + 1;
+  const chg = st.history.length ? st.history[st.history.length - 1].chg : null;
+  const fills = me.fills.length;
+
   return `
     <div class="n-strip">
-      ${cell('Mark', st.mark, `am ${ui.markFlash ?? ''}`)}
-      ${cell('Position', signed(me.shares), cls(me.shares))}
-      ${cell('Avg', me.avgPrice === null ? '—' : px(me.avgPrice))}
-      ${cell('P/L', money(me.pl), cls(me.pl))}
+      <div>
+        <div class="n-lab">Mark</div>
+        <div class="markcell">
+          <div class="n-v ${ui.markFlash ?? ''}">${st.mark}</div>
+          ${sparkline(markPath(st))}
+        </div>
+        <div class="n-sub ${chg === null ? '' : cls(chg)}">
+          ${chg === null ? 'opening' : `${signed(chg)} last round`}</div>
+      </div>
+      <div>
+        <div class="n-lab">Position</div>
+        <div class="n-v ${cls(me.shares)}">${signed(me.shares)}</div>
+        <div class="n-sub">${me.shares > 0 ? 'long' : me.shares < 0 ? 'short' : 'flat'}</div>
+      </div>
+      <div>
+        <div class="n-lab">Avg</div>
+        <div class="n-v">${me.avgPrice === null ? '—' : px(me.avgPrice)}</div>
+        <div class="n-sub">${fills} fill${fills === 1 ? '' : 's'}</div>
+      </div>
+      <div>
+        <div class="n-lab">P/L</div>
+        <div class="n-v ${cls(me.pl)}">${moneyHTML(me.pl)}</div>
+        <div class="n-sub">${rank ? `${ordinal(rank)} of ${st.seated}` : '—'}</div>
+      </div>
     </div>`;
 }
 
-function nextOrderTicket(st, me) {
+function orderTicket(st, me) {
   if (me.ordersReady) {
     const o = me.pendingOrder;
     const side = o.qty > 0 ? 'BUY' : o.qty < 0 ? 'SELL' : 'PASS';
@@ -1145,19 +923,26 @@ function nextOrderTicket(st, me) {
   const e = orderEconomics(st);
   return `
     <div class="n-act">
-      <div class="split">
+      ${/* One decision, one control: a two-state choice belongs in a single
+            track, and the secondary choice is set smaller so it does not
+            compete with the primary one. */ ''}
+      <div class="n-seg">
         <button class="buy ${ui.side === 'BUY' ? 'on' : ''}" data-side="BUY">Buy</button>
         <button class="sell ${ui.side === 'SELL' ? 'on' : ''}" data-side="SELL">Sell</button>
       </div>
       <input id="qty" class="n-qty" inputmode="numeric" autocomplete="off"
              placeholder="0" value="${esc(ui.qty)}" aria-label="Quantity">
-      <div class="split">
+      <div class="n-seg mode">
         <button class="${ui.orderType === 'MARKET' ? 'on' : ''}" data-otype="MARKET">Market</button>
         <button class="${ui.orderType === 'LIMIT' ? 'on' : ''}" data-otype="LIMIT">Limit</button>
       </div>
+      ${/* A ledger, not a sentence: labels left, figures right-aligned in a
+            column you can read down. */ ''}
       <div class="n-econ">
-        <span>${e.fillsLabel} <b>${e.fillsValue}</b> <i>${e.fillsNote}</i></span>
-        <span>${e.costLabel} <b class="${e.costClass}">${e.costValue}</b></span>
+        <span class="k">${e.fillsLabel} <i>${e.fillsNote}</i></span>
+        <span class="val">${e.fillsValue}</span>
+        <span class="k">${e.costLabel}</span>
+        <span class="val ${e.costClass}">${e.costValue}</span>
       </div>
       <button class="primary n-go" id="submitOrder">Confirm</button>
       <button id="pass" class="wide n-pass">Pass this round</button>
@@ -1165,7 +950,7 @@ function nextOrderTicket(st, me) {
     </div>`;
 }
 
-function nextCardTicket(st, me) {
+function cardTicket(st, me) {
   if (me.cardsReady) {
     const c = me.pendingCards ?? { up: 0, down: 0, multiply: 0, add: 0 };
     const total = Object.values(c).reduce((a, b) => a + b, 0);
@@ -1204,7 +989,47 @@ function nextCardTicket(st, me) {
     </div>`;
 }
 
-function renderPlayerNext() {
+/**
+ * The instruction bar.
+ *
+ * A player should never have to work out whose turn it is. When the table is
+ * waiting on you this is a lit block giving an order; when it is not, it drops
+ * to a quiet rule that names who is holding things up.
+ */
+function callToAction(label, right, mine) {
+  return mine
+    ? `<div class="n-cta">
+         <span class="who"><i class="dot"></i>${label}</span>
+         <span class="s">${right}</span>
+       </div>`
+    : `<div class="n-rule wait"><span>${label}</span><span>${right}</span></div>`;
+}
+
+/**
+ * What the round that just ended did.
+ *
+ * The server advances the round the instant the fourth die locks, which wipes
+ * the dice before anyone can read them — the moment the whole round builds
+ * towards vanishes. So the settled round is replayed here, in full, through the
+ * next round's order entry. It also happens to be exactly what you want in
+ * front of you while deciding the next order, since the regime turns on it.
+ */
+function lastRoundReplay(st, me) {
+  const h = st.history[st.history.length - 1];
+  if (!h) return '';
+  const yours = me ? me.shares * h.chg : null;
+  return `
+    ${rule(`Round ${h.round} settled`, `${h.priorMark} → ${h.mark}`)}
+    <div class="n-replay">
+      ${diceBoard({
+        dice: h.dice, net: h.net, live: false, rollStep: -1,
+        resolved: { trend: h.trend, type: h.type, chg: h.chg },
+        priorMark: h.priorMark, yours,
+      })}
+    </div>`;
+}
+
+function renderPlayer() {
   const st = S.state, me = S.me;
   if (!st || !me) {
     app.innerHTML = `${topbar()}<div class="n-wrap"><div class="banner wait blink">Connecting</div>${alerts()}</div>`;
@@ -1212,42 +1037,48 @@ function renderPlayerNext() {
   }
 
   const rank = st.standings.findIndex((p) => p.id === me.id) + 1;
-  const last = st.history[st.history.length - 1];
   const waiting = st.phase === 'orders' ? st.awaitingOrders
     : st.phase === 'cards' ? st.awaitingCards : [];
 
-  let action, actionLabel, actionRight;
+  // Does the table need something from this player right now? Everything else
+  // on screen steps back while it does.
+  const owes = (st.phase === 'orders' && !me.ordersReady)
+    || (st.phase === 'cards' && !me.cardsReady);
+
+  let action, cta;
   if (st.phase === 'lobby') {
-    action = `<div class="n-act"><div class="banner wait blink">Waiting for the host</div></div>`;
-    actionLabel = 'Lobby'; actionRight = `${st.seated} seated`;
+    action = `<div class="n-act plain"><div class="banner wait blink">Waiting for the host to open</div></div>`;
+    cta = callToAction('Lobby', `${st.seated} seated`, false);
   } else if (st.phase === 'orders') {
-    action = nextOrderTicket(st, me);
-    actionLabel = `Order · round ${st.round}`;
-    actionRight = `${st.seated - waiting.length} of ${st.seated} in`;
+    action = orderTicket(st, me);
+    cta = owes
+      ? callToAction('Your move — place an order',
+                     `R${st.round} · ${st.seated - waiting.length}/${st.seated}`, true)
+      : callToAction(`Order in — waiting on ${waiting.join(', ')}`,
+                     `${st.seated - waiting.length}/${st.seated}`, false);
   } else if (st.phase === 'cards') {
-    action = nextCardTicket(st, me);
-    actionLabel = `Cards · round ${st.round}`;
-    actionRight = `${st.seated - waiting.length} of ${st.seated} in`;
+    action = cardTicket(st, me);
+    cta = owes
+      ? callToAction('Your move — play your cards',
+                     `R${st.round} · ${st.seated - waiting.length}/${st.seated}`, true)
+      : callToAction(`Cards in — waiting on ${waiting.join(', ')}`,
+                     `${st.seated - waiting.length}/${st.seated}`, false);
   } else if (st.phase === 'rolling') {
-    action = `<div class="n-act plain">${diceRow(st)}</div>`;
-    actionLabel = 'Dice';
-    actionRight = `${st.rollStep}/4 locked`;
+    action = `<div class="n-act plain">${diceBoard({
+      dice: st.dice, net: st.net, live: true, rollStep: st.rollStep,
+    })}</div>`;
+    cta = callToAction(`Rolling · round ${st.round}`, `${st.rollStep}/4 locked`, false);
   } else {
     const w = st.standings[0];
-    action = `<div class="n-act plain"><div class="banner">Market closed</div>
-      <div class="n-winner">${esc(w?.name ?? '—')} <span class="${cls(w?.pl ?? 0)}">${w ? money(w.pl) : ''}</span></div></div>`;
-    actionLabel = 'Final'; actionRight = `${st.maxRounds} rounds`;
+    const won = w && w.id === me.id;
+    action = `<div class="n-act plain">
+      <div class="n-winner ${won ? 'up' : ''}">${won ? 'You win' : esc(w?.name ?? '—')}
+        <span class="${cls(w?.pl ?? 0)}">${w ? moneyHTML(w.pl) : ''}</span></div></div>`;
+    cta = callToAction('Market closed', `${st.maxRounds} rounds played`, false);
   }
 
-  app.innerHTML = `
-    ${topbar(`<span class="chip">${esc(me.name)}</span>`)}
-    <div class="n-wrap">
-      ${alerts()}
-      ${nextStrip(st, me)}
-      ${rule(actionLabel, actionRight)}
-      ${action}
-      ${waiting.length ? `<div class="n-waiting">Waiting on ${esc(waiting.join(', '))}</div>` : ''}
-
+  const secondary = `
+    <div class="n-secondary ${owes ? '' : 'lit'}">
       ${st.reveal ? `
         ${rule(`Round ${st.round} book`, `printed ${st.reveal.price}`)}
         ${ladder(st.reveal)}
@@ -1257,7 +1088,7 @@ function renderPlayerNext() {
           <i>paid by takers, collected by resters</i>
         </div>` : ''}
 
-      ${rule('Hand', `${me.hand.up + me.hand.down + me.hand.multiply + me.hand.add} left`)}
+      ${rule('Your hand', `${me.hand.up + me.hand.down + me.hand.multiply + me.hand.add} left`)}
       <div class="n-hand">
         ${Object.keys(CARD_META).map((k) => `
           <div class="n-card ${k} ${me.hand[k] === 0 ? 'spent' : ''}">
@@ -1268,25 +1099,31 @@ function renderPlayerNext() {
       ${rule('Standings', `you are ${rank || '—'} of ${st.seated}`)}
       ${standingsTable(st, { meId: me.id })}
 
-      ${rule('Blotter', `${me.fills.length} fills`)}
+      ${rule('Your blotter', `${me.fills.length} fills`)}
       ${blotter(me)}
 
-      ${last ? `${rule('History', `${st.history.length} settled`)}${historyTable(st)}` : ''}
+      ${st.history.length ? `${rule('History', `${st.history.length} settled`)}${historyTable(st)}` : ''}
+    </div>`;
 
+  app.innerHTML = `
+    ${topbar(`<span class="chip">${esc(me.name)}</span>`)}
+    <div class="n-wrap">
+      ${alerts()}
+      ${positionStrip(st, me)}
+      ${st.phase === 'orders' ? lastRoundReplay(st, me) : ''}
+      ${cta}
+      ${action}
+      ${secondary}
       <div class="n-foot">
         <span class="dim tiny">Seated as ${esc(me.name)}</span>
         <a class="dim tiny" href="/${esc(st.code)}?new=1">Join as someone else</a>
-        <span class="spacer"></span>
-        <button class="ghost tiny" id="skin">Classic layout</button>
       </div>
     </div>`;
 
   wirePlayer();
-  const sk = document.getElementById('skin');
-  if (sk) sk.onclick = act.toggleSkin;
 }
 
-function renderDashboardNext(hostMode = false) {
+function renderDashboard(hostMode = false) {
   const st = S.state;
   if (!st) {
     app.innerHTML = `${topbar()}<div class="n-wrap"><div class="banner wait blink">Connecting</div>${alerts()}</div>`;
@@ -1303,8 +1140,28 @@ function renderDashboardNext(hostMode = false) {
     marketOffer: last.marketOffer, limitOffer: last.limitOffer,
     pressure: last.pressure, absorbed: last.absorbed, price: last.print,
   } : null);
-  const liveDice = st.dice.some((d) => d !== null);
-  const dice = liveDice ? st.dice : (last?.dice ?? null);
+  /**
+   * The dice panel shows exactly one round, and says which.
+   *
+   * While rolling it is always the round being rolled, even before the first
+   * die lands — an empty board stating what each die needs is the point, and
+   * falling back to the previous round here put last round's faces under this
+   * round's modifiers, which is nonsense dressed up as information.
+   *
+   * Between rounds it replays the round that just settled, which is the beat
+   * the game builds to. During card play it shows nothing: that round has no
+   * dice yet and the previous one has had its moment.
+   */
+  const rolling = st.phase === 'rolling';
+  const replaying = st.phase === 'orders' && !!last;
+  const diceRound = rolling ? { dice: st.dice, net: st.net, round: st.round, live: true }
+    : replaying ? {
+        dice: last.dice, net: last.net, round: last.round, live: false,
+        resolved: { trend: last.trend, type: last.type, chg: last.chg },
+        priorMark: last.priorMark,
+      }
+    : null;
+
   const net = st.net ?? (last ? { cards: last.cards, regime: last.regime, plays: last.plays } : null);
   const chg = last?.chg ?? 0;
 
@@ -1323,7 +1180,10 @@ function renderDashboardNext(hostMode = false) {
       <div class="n-top">
         <div class="n-mark">
           <div class="n-lab">Mark</div>
-          <div class="m ${ui.markFlash ?? ''}">${st.mark}</div>
+          <div class="markcell">
+            <div class="m ${ui.markFlash ?? ''}">${st.mark}</div>
+            ${sparkline(markPath(st), 132, 46)}
+          </div>
           <div class="d ${cls(chg)}">${st.history.length ? signed(chg) : 'opening'}</div>
         </div>
         ${ladder(book)}
@@ -1343,11 +1203,20 @@ function renderDashboardNext(hostMode = false) {
 
       <div class="n-cols">
         <div>
-          ${dice ? `
-            ${rule(`Round ${liveDice ? st.round : last?.round} dice`, st.net
-              ? `net trend ${signed(st.net.trend)} · net magnitude ${signed(st.net.mag)}`
-              : last ? `${last.type === 'MULTIPLY' ? '×' : '+'} ${signed(last.chg)} to ${last.mark}` : '')}
-            <div class="n-pad">${diceRow(st, dice, liveDice)}</div>` : ''}
+          ${diceRound ? `
+            ${rule(
+              diceRound.live ? `Round ${diceRound.round} dice` : `Round ${diceRound.round} settled`,
+              diceRound.live
+                ? `${st.rollStep} of 4 locked · net trend ${signed(diceRound.net.trend)} · net magnitude ${signed(diceRound.net.mag)}`
+                : `${signed(diceRound.resolved.chg)} to ${last.mark}`)}
+            <div class="n-pad">${diceBoard({
+              dice: diceRound.dice,
+              net: diceRound.net,
+              live: diceRound.live,
+              rollStep: st.rollStep,
+              resolved: diceRound.resolved ?? null,
+              priorMark: diceRound.priorMark,
+            })}</div>` : ''}
 
           ${net ? `
             ${rule('Cards played')}
@@ -1416,13 +1285,10 @@ function renderDashboardNext(hostMode = false) {
 
       <div class="n-foot">
         <span class="spacer"></span>
-        <button class="ghost tiny" id="skin">Classic layout</button>
       </div>
     </div>`;
 
   if (hostMode) wireHost(st, joinUrl);
-  const sk = document.getElementById('skin');
-  if (sk) sk.onclick = act.toggleSkin;
 }
 
 // --- Render / route --------------------------------------------------------
@@ -1434,11 +1300,10 @@ function render() {
   const start = active?.selectionStart;
   const end = active?.selectionEnd;
 
-  const next = ui.skin === 'next';
   if (!S.code) renderHome();
-  else if (S.role === 'player') (next ? renderPlayerNext : renderPlayer)();
-  else if (S.role === 'host') (next ? renderDashboardNext : renderDashboard)(true);
-  else if (S.role === 'dashboard') (next ? renderDashboardNext : renderDashboard)(false);
+  else if (S.role === 'player') renderPlayer();
+  else if (S.role === 'host') renderDashboard(true);
+  else if (S.role === 'dashboard') renderDashboard(false);
   else renderJoin();
 
   if (id) {

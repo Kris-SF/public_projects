@@ -276,7 +276,12 @@ export function tripCardsGate(game) {
 // Rolling phase
 // ---------------------------------------------------------------------------
 
-export const DIE_LABELS = ['Trend Die', 'Multiply/Add Die', 'D6 (A)', 'D6 (B)'];
+/**
+ * Named for what they decide, not for the arithmetic they feed. A player needs
+ * to know the second die sets how violent the move is, not that it picks
+ * between two operators.
+ */
+export const DIE_LABELS = ['Trend die', 'Volatility die', 'Size A', 'Size B'];
 
 export function rollStep(game) {
   return game.dice.filter((d) => d !== null).length;

@@ -1,34 +1,96 @@
 /* ===========================================================================
-   MOONCOIN TERMINAL
-   Amber phosphor on black. Dense grids, hard edges, tabular figures.
-   No rounded corners, no shadows, no gradients — a trading terminal, not an app.
+   MOONCOIN
+   Moontower indigo, sharpened. The palette is unchanged from the terminal
+   build — same accent, same reserved maroon, same semantic green and red — but
+   the surface it sits on now has depth. Three real levels: the page, the panel,
+   and the one card you are being asked to act on, which is genuinely raised off
+   the page rather than outlined on it.
+
+   Three typefaces, each with a job. Lexend names things, Inter says things,
+   JetBrains Mono counts things. Every figure is mono, tabular, and tracked in
+   at display size, which is what monospace needs to stop reading as a string of
+   characters and start reading as a number.
    =========================================================================== */
 
+/* Variable fonts, self-hosted — one file per family covers every weight used,
+   and nothing on this page reaches for a CDN. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Lexend";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/lexend.woff2") format("woff2");
+}
+
 :root {
-  --bg: #000000;
-  --bg-panel: #0a0a0a;
-  --bg-row: #121212;
-  --bg-row-alt: #0d0d0d;
+  /* The three levels. Nothing on screen sits between them. */
+  --bg: #06070C;
+  --l1: #0B0D16;
+  --l2: #11141F;
+  --l3: #171B29;
 
-  --amber: #ffa028;
-  --amber-dim: #b36f14;
-  --amber-deep: #7a4b0c;
-  --amber-glow: rgba(255, 160, 40, 0.14);
+  /* Kept under their old names — the panel and row surfaces are now levels. */
+  --bg-panel: var(--l1);
+  --bg-row: var(--l3);
+  --bg-row-alt: var(--l1);
 
-  --up: #2bd96b;
-  --down: #ff4a3d;
-  --cyan: #4bc8ff;
-  --white: #e8e8e8;
-  --grey: #6d6d6d;
-  --grey-dark: #333333;
+  /* Moontower purple, and the room around it. */
+  --accent: #5863F8;
+  --accent-bright: #838CFF;
+  --accent-deep: #232866;
+  --accent-glow: rgba(88, 99, 248, 0.16);
+  --on-accent: #FFFFFF;
 
-  --rule: #3a2a12;
-  --rule-bright: #6b4d1c;
+  /* Raising the surfaces raises the floor these have to clear. Measured against
+     the *lightest* surface they ever sit on (--l3), not against black, which is
+     the easy case: label 5.2:1, secondary 6.2:1, tertiary 4.8:1 — all past the
+     4.5 needed at these sizes. The old #6B74D8 was 5.1:1 on black but only
+     4.2:1 on a raised card, which is exactly the failure that measuring rather
+     than eyeballing was meant to catch. */
+  --accent-dim: #7C85E4;   /* every small-caps label */
+  --grey: #949BB0;         /* secondary prose */
+  --faint: #7F87A0;        /* tertiary: sub-labels, notes */
+  --grey-dark: #2A3040;    /* disabled and placeholder only — never information */
 
-  --mono: "IBM Plex Mono", "SFMono-Regular", "SF Mono", Menlo, Consolas,
-          "DejaVu Sans Mono", monospace;
+  /* Reserved, per brand, for what is missing or owed. */
+  --maroon: #C77F95;
 
-  --gap: 6px;
+  /* Semantic, and deliberately not the accent: profit and loss must stay
+     unambiguous even on a screen that is otherwise entirely indigo. */
+  --up: #35D07F;
+  --down: #FF5E5B;
+  --cyan: #63C7FF;
+
+  --white: #F2F4F8;
+
+  --rule: rgba(255, 255, 255, 0.07);
+  --rule-bright: rgba(255, 255, 255, 0.11);
+
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --disp: "Lexend", "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --gap: 8px;
+  --r: 12px;
+
+  /* One raised surface, defined once: an inner highlight along the top edge and
+     a long soft shadow beneath. This is most of the difference between a screen
+     that is styled and one that is designed. */
+  --lift: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 18px 40px -24px rgba(0, 0, 0, 0.9);
 }
 
 * { box-sizing: border-box; }
@@ -38,10 +100,10 @@ html, body {
   padding: 0;
   height: 100%;
   background: var(--bg);
-  color: var(--amber);
-  font-family: var(--mono);
-  font-size: 13px;
-  line-height: 1.35;
+  color: var(--white);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
@@ -52,48 +114,79 @@ body { overflow-x: hidden; }
 
 /* --- Type ---------------------------------------------------------------- */
 
-h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: 0.08em; }
-h1 { font-size: 15px; }
-h2 { font-size: 12px; }
-a { color: var(--cyan); }
+h1, h2, h3 { margin: 0; font-family: var(--disp); font-weight: 600; letter-spacing: -0.015em; }
+h1 { font-size: 20px; }
+h2 { font-size: 15px; }
+a { color: var(--accent-bright); }
 
-.dim   { color: var(--amber-dim); }
+.dim   { color: var(--accent-dim); }
 .grey  { color: var(--grey); }
 .white { color: var(--white); }
 .up    { color: var(--up); }
 .down  { color: var(--down); }
 .cyan  { color: var(--cyan); }
-.num   { font-variant-numeric: tabular-nums; text-align: right; }
+
+/* Every figure is mono and tracked in — see the file header. */
+.num, .big, .huge, .qty, .n-v, .n-qty, .n-pip, .picked, .m, .p, .n-code, .code-in {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "zero" 1;
+  letter-spacing: -0.028em;
+}
+.num   { text-align: right; }
 .center{ text-align: center; }
-.big   { font-size: 28px; font-weight: 700; letter-spacing: 0.02em; }
-.huge  { font-size: 44px; font-weight: 700; letter-spacing: -0.01em; }
-.tiny  { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
-.strong{ font-weight: 700; }
+.big   { font-size: 28px; font-weight: 500; }
+.huge  { font-size: 46px; font-weight: 500; }
+.tiny  { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; }
+.strong{ font-weight: 600; }
+
+/* A dollar amount is not a price. Shrinking and fading the symbol is what makes
+   $112 read as money rather than as four characters. Display sizes only — in a
+   table the symbol is doing column work. */
+.cur { font-size: 0.72em; opacity: 0.62; margin-right: 1px; }
 
 /* --- Top bar ------------------------------------------------------------- */
 
 .topbar {
   display: flex;
   align-items: center;
-  gap: 18px;
-  background: var(--amber);
-  color: #000;
-  padding: 4px 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  gap: 12px;
+  padding: 12px 16px;
   font-size: 12px;
-  text-transform: uppercase;
+  color: var(--grey);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent);
+  border-bottom: 1px solid var(--rule);
   flex-wrap: wrap;
 }
 .topbar .spacer { margin-left: auto; }
 .topbar .chip {
-  background: #000;
-  color: var(--amber);
-  padding: 1px 7px;
-  letter-spacing: 0.14em;
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--accent-glow);
+  color: var(--accent-bright);
+  padding: 3px 10px;
+  border-radius: 999px;
 }
-.topbar .chip.live { background: #000; color: var(--up); }
-.topbar .chip.off  { background: #000; color: var(--down); }
+.topbar .chip.live { background: rgba(53, 208, 127, 0.14); color: var(--up); }
+.topbar .chip.off  { background: rgba(255, 94, 91, 0.14); color: var(--down); }
+.topbar .phase { text-transform: uppercase; letter-spacing: 0.1em; font-size: 11px; }
+
+/* The brand, and only the brand. */
+.topbar .brand {
+  font-family: var(--disp);
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  color: #fff;
+  text-transform: lowercase;
+}
+
+/* On a phone the bar is the wordmark, the table and the connection — the phase
+   is already spelled out by the instruction bar underneath it. */
+@media (max-width: 520px) {
+  .topbar { gap: 9px; padding: 11px 13px; }
+  .topbar .phase { display: none; }
+}
 
 /* --- Layout -------------------------------------------------------------- */
 
@@ -110,283 +203,263 @@ a { color: var(--cyan); }
 
 .panel {
   border: 1px solid var(--rule);
-  background: var(--bg-panel);
+  background: var(--l1);
+  border-radius: var(--r);
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow: hidden;
 }
 .panel > header {
-  background: var(--amber);
-  color: #000;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-family: var(--disp);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #fff;
+  padding: 11px 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent);
+  border-bottom: 1px solid var(--rule);
   display: flex;
   align-items: center;
   gap: 10px;
 }
 .panel > header .spacer { margin-left: auto; }
-.panel > header .note { font-weight: 400; letter-spacing: 0.06em; opacity: 0.75; }
-.panel .body { padding: 8px; }
+.panel > header .note {
+  font-family: var(--mono);
+  font-size: 11px; font-weight: 400; letter-spacing: 0;
+  color: var(--faint);
+}
+.panel .body { padding: 12px 14px; }
 .panel .body.flush { padding: 0; }
-
-.panel.ghost > header { background: var(--amber-deep); color: #000; }
+.panel.ghost > header { color: var(--grey); }
 
 /* --- Tables -------------------------------------------------------------- */
 
-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th {
   text-align: left;
-  font-weight: 700;
+  font-family: var(--mono);
+  font-weight: 400;
   font-size: 10px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--amber-dim);
+  color: var(--accent-dim);
   border-bottom: 1px solid var(--rule);
-  padding: 3px 8px;
+  padding: 8px 14px;
   white-space: nowrap;
 }
 td {
-  padding: 3px 8px;
-  border-bottom: 1px solid #1a1a1a;
+  padding: 8px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
   white-space: nowrap;
 }
-tbody tr:nth-child(odd) { background: var(--bg-row-alt); }
-tbody tr.me { background: var(--amber-glow); }
-tbody tr.me td:first-child { box-shadow: inset 2px 0 0 var(--amber); }
-th.num, td.num { text-align: right; }
+tbody tr:first-child td { border-top: none; }
+tbody tr.me td { background: var(--accent-glow); }
+tbody tr.me td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+th.num, td.num { text-align: right; font-family: var(--mono); }
 .scroll-x { overflow-x: auto; }
 
 /* --- Controls ------------------------------------------------------------ */
 
 button, .btn {
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  background: #000;
-  color: var(--amber);
-  border: 1px solid var(--amber-dim);
-  padding: 6px 12px;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  background: var(--l3);
+  color: var(--white);
+  border: 1px solid var(--rule-bright);
+  border-radius: 10px;
+  padding: 10px 14px;
   cursor: pointer;
-  transition: background 60ms linear, color 60ms linear;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
-button:hover:not(:disabled) { background: var(--amber); color: #000; }
-button:active:not(:disabled) { background: var(--amber-dim); }
-button:disabled { color: var(--grey-dark); border-color: var(--grey-dark); cursor: not-allowed; }
+button:hover:not(:disabled) { background: #1E2334; border-color: rgba(255, 255, 255, 0.16); }
+button:active:not(:disabled) { transform: translateY(1px); }
+button:disabled { color: var(--grey-dark); background: var(--l2); border-color: var(--rule); cursor: not-allowed; }
+button:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
 
-button.primary { background: var(--amber); color: #000; border-color: var(--amber); }
-button.primary:hover:not(:disabled) { background: #ffb750; }
-button.danger { color: var(--down); border-color: var(--down); }
-button.danger:hover:not(:disabled) { background: var(--down); color: #000; }
-button.buy  { color: var(--up); border-color: var(--up); }
-button.buy:hover:not(:disabled), button.buy.on { background: var(--up); color: #000; }
-button.sell { color: var(--down); border-color: var(--down); }
-button.sell:hover:not(:disabled), button.sell.on { background: var(--down); color: #000; }
-button.on { background: var(--amber); color: #000; }
+/* The commit is a different species of button: a vertical gradient, an inner
+   top highlight, a coloured shadow, and a real press. */
+button.primary {
+  background: linear-gradient(180deg, var(--accent-bright), var(--accent));
+  color: var(--on-accent);
+  border: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 10px 26px -12px rgba(88, 99, 248, 0.75);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+button.primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--accent-bright), var(--accent));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 14px 30px -12px rgba(88, 99, 248, 0.95);
+}
+button.primary:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+button.primary:disabled { background: var(--l2); color: var(--grey-dark); box-shadow: none; }
+
+button.danger { background: transparent; color: var(--down); border-color: rgba(255, 94, 91, 0.4); }
+button.danger:hover:not(:disabled) { background: rgba(255, 94, 91, 0.14); border-color: var(--down); }
+button.ghost { background: transparent; color: var(--grey); border-color: var(--rule); }
+button.ghost:hover:not(:disabled) { background: var(--l2); color: var(--white); }
+
+button.buy  { background: transparent; color: var(--up); border-color: rgba(53, 208, 127, 0.4); }
+button.buy:hover:not(:disabled) { background: rgba(53, 208, 127, 0.14); }
+button.buy.on { background: var(--up); color: #04140A; border-color: var(--up); }
+button.sell { background: transparent; color: var(--down); border-color: rgba(255, 94, 91, 0.4); }
+button.sell:hover:not(:disabled) { background: rgba(255, 94, 91, 0.14); }
+button.sell.on { background: var(--down); color: #1A0605; border-color: var(--down); }
+button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
 button.wide { width: 100%; }
-button.lg { font-size: 15px; padding: 12px 18px; }
+button.lg { font-size: 16px; padding: 15px 18px; }
+button.tiny { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; padding: 5px 10px; }
 
 input, select {
   font-family: var(--mono);
-  font-size: 14px;
-  background: #000;
-  color: var(--amber);
-  border: 1px solid var(--amber-dim);
-  padding: 6px 8px;
+  font-size: 15px;
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--white);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 10px 12px;
   width: 100%;
 }
-input:focus, select:focus { outline: none; border-color: var(--amber); background: #0d0900; }
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(88, 99, 248, 0.22);
+}
 input::placeholder { color: var(--grey-dark); }
-input:disabled, select:disabled { color: var(--grey); border-color: var(--grey-dark); }
-input.num { text-align: right; font-size: 20px; font-weight: 700; }
+input:disabled, select:disabled { color: var(--grey-dark); border-color: var(--rule); }
+input.num { text-align: right; font-size: 20px; font-weight: 500; }
 
-label.field { display: block; margin-bottom: 8px; }
+label.field { display: block; margin-bottom: 12px; }
 label.field > span {
   display: block;
+  font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--amber-dim);
-  margin-bottom: 3px;
+  color: var(--accent-dim);
+  margin-bottom: 6px;
 }
 
 .row { display: flex; gap: var(--gap); align-items: center; flex-wrap: wrap; }
-.row.tight { gap: 4px; }
+.row.tight { gap: 5px; }
 .stack { display: flex; flex-direction: column; gap: var(--gap); }
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
 
-/* --- Readouts ------------------------------------------------------------ */
-
-.readout { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; }
-.readout .label {
-  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--amber-dim);
-}
-.readout .value { font-size: 22px; font-weight: 700; line-height: 1.1; }
-
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
-.tiles .readout { border-right: 1px solid var(--rule); }
-.tiles .readout:last-child { border-right: none; }
-
 /* Price flash on a new print */
-@keyframes flash-up   { from { background: rgba(43, 217, 107, 0.35); } to { background: transparent; } }
-@keyframes flash-down { from { background: rgba(255, 74, 61, 0.35); }  to { background: transparent; } }
+@keyframes flash-up   { from { background: rgba(53, 208, 127, 0.3); } to { background: transparent; } }
+@keyframes flash-down { from { background: rgba(255, 94, 91, 0.3); }  to { background: transparent; } }
 .flash-up   { animation: flash-up 700ms ease-out; }
 .flash-down { animation: flash-down 700ms ease-out; }
 
 /* --- The ladder ---------------------------------------------------------- */
 
 .ladder { display: grid; grid-template-columns: repeat(5, 1fr); text-align: center; }
-.ladder > div { border-right: 1px solid var(--rule); padding: 8px 4px; }
+.ladder > div { border-right: 1px solid var(--rule); padding: 14px 6px; }
 .ladder > div:last-child { border-right: none; }
 .ladder .label {
-  font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
-  color: var(--amber-dim); margin-bottom: 4px;
+  font-family: var(--mono);
+  font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--accent-dim); margin-bottom: 6px;
 }
-.ladder .qty { font-size: 24px; font-weight: 700; }
-.ladder .bid  .qty { color: var(--up); }
+.ladder .qty { font-family: var(--mono); font-size: 26px; font-weight: 500; letter-spacing: -0.028em; }
+.ladder .bid   .qty { color: var(--up); }
 .ladder .offer .qty { color: var(--down); }
-.ladder .imb { background: #14100a; }
-.ladder .imb .qty { font-size: 28px; }
-
-/* --- Dice ---------------------------------------------------------------- */
-
-.dice { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap); }
-.die {
-  border: 1px solid var(--rule);
-  background: #000;
-  padding: 10px 4px;
-  text-align: center;
-  min-height: 96px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  align-items: center;
-}
-.die .cap {
-  font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--amber-dim);
-}
-.die .pip { font-size: 40px; font-weight: 700; line-height: 1; }
-.die.locked { border-color: var(--amber); }
-.die.locked .pip { color: var(--amber); }
-.die.empty .pip { color: var(--grey-dark); }
-.die.next { border-color: var(--amber); background: #140d02; }
-.die.rolling .pip { animation: tumble 90ms steps(1) infinite; }
-
-@keyframes tumble {
-  0%   { opacity: 1; transform: translateY(0); }
-  50%  { opacity: 0.35; transform: translateY(-3px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-
-/* --- Cards --------------------------------------------------------------- */
-
-.cardgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap); }
-.card {
-  border: 1px solid var(--rule);
-  background: #000;
-  padding: 8px 6px;
-  text-align: center;
-}
-.card.spent { opacity: 0.35; }
-.card .glyph { font-size: 26px; font-weight: 700; line-height: 1.1; }
-.card .name  { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--amber-dim); }
-.card .held  { font-size: 11px; color: var(--white); margin-top: 2px; }
-.card.up   .glyph { color: var(--up); }
-.card.down .glyph { color: var(--down); }
-.card.multiply .glyph, .card.add .glyph { color: var(--cyan); }
-.card .stepper { display: flex; gap: 2px; margin-top: 5px; }
-.card .stepper button { flex: 1; padding: 3px 0; font-size: 13px; letter-spacing: 0; }
-.card .picked { font-size: 18px; font-weight: 700; min-width: 22px; text-align: center; padding-top: 2px; }
+.ladder .imb { background: var(--l2); }
+.ladder .imb .qty { font-size: 30px; }
 
 /* --- Status strip -------------------------------------------------------- */
 
-.waiting { display: flex; gap: 4px; flex-wrap: wrap; }
+.waiting { display: flex; gap: 6px; flex-wrap: wrap; }
 .pill {
-  border: 1px solid var(--rule-bright);
-  padding: 1px 7px;
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 3px 11px;
+  font-size: 12px;
+  color: var(--grey);
 }
-.pill.ready { border-color: var(--up); color: var(--up); }
-.pill.late  { border-color: var(--amber-dim); color: var(--amber-dim); }
-.pill.gone  { border-color: var(--grey-dark); color: var(--grey-dark); text-decoration: line-through; }
+.pill.ready { border-color: rgba(53, 208, 127, 0.45); color: var(--up); background: rgba(53, 208, 127, 0.1); }
+.pill.late  { border-color: rgba(199, 127, 149, 0.5); color: var(--maroon); background: rgba(199, 127, 149, 0.1); }
+.pill.gone  { border-color: var(--rule); color: var(--grey-dark); text-decoration: line-through; }
 
 .tape {
-  font-size: 11px;
-  color: var(--amber-dim);
-  max-height: 150px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--grey);
+  max-height: 190px;
   overflow-y: auto;
-  padding: 6px 8px;
+  padding: 10px 14px;
 }
 .tape div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tape .t { color: var(--grey); margin-right: 6px; }
+.tape .t { color: var(--faint); margin-right: 8px; }
 
 /* --- Home / join --------------------------------------------------------- */
 
-.home {
-  max-width: 460px;
-  margin: 0 auto;
-  padding: 40px 16px;
-  width: 100%;
+.home { max-width: 460px; margin: 0 auto; padding: 48px 16px; width: 100%; }
+.brand { text-align: center; margin-bottom: 30px; }
+.brand .logo {
+  font-family: var(--disp);
+  font-size: 40px; font-weight: 300; letter-spacing: -0.03em;
+  text-transform: lowercase; color: #fff;
 }
-.brand { text-align: center; margin-bottom: 26px; }
-.brand .logo { font-size: 30px; font-weight: 700; letter-spacing: 0.3em; }
-.brand .sub  { font-size: 10px; letter-spacing: 0.32em; color: var(--amber-dim); margin-top: 4px; }
-.brand .rule { border-top: 1px solid var(--rule); margin-top: 14px; }
+.brand .sub {
+  font-family: var(--mono);
+  font-size: 11px; letter-spacing: 0.24em; color: var(--faint);
+  margin-top: 6px; text-transform: uppercase;
+}
+.brand .rule { border-top: 1px solid var(--rule); margin-top: 18px; }
 
-.code-in { font-size: 34px; text-align: center; letter-spacing: 0.34em; text-transform: uppercase; }
+.code-in { font-size: 34px; text-align: center; letter-spacing: 0.28em; text-transform: uppercase; }
 
 .err {
-  border: 1px solid var(--down);
+  border: 1px solid rgba(255, 94, 91, 0.4);
+  background: rgba(255, 94, 91, 0.1);
   color: var(--down);
-  padding: 6px 8px;
-  font-size: 12px;
+  border-radius: 10px; padding: 10px 12px; font-size: 13px;
 }
 .ok {
-  border: 1px solid var(--up);
+  border: 1px solid rgba(53, 208, 127, 0.4);
+  background: rgba(53, 208, 127, 0.1);
   color: var(--up);
-  padding: 6px 8px;
-  font-size: 12px;
+  border-radius: 10px; padding: 10px 12px; font-size: 13px;
 }
 
+/* A waiting state is a slow pulse, not a terminal cursor. */
 .blink::after {
-  content: "\2588";
-  animation: blink 1s steps(1) infinite;
-  margin-left: 2px;
+  content: "";
+  display: inline-block;
+  width: 7px; height: 7px; border-radius: 999px;
+  background: currentColor;
+  margin-left: 9px; vertical-align: middle;
+  animation: pulse-dot 2.4s ease-out infinite;
 }
-@keyframes blink { 50% { opacity: 0; } }
+@keyframes pulse-dot {
+  0%   { box-shadow: 0 0 0 0 rgba(131, 140, 255, 0.55); }
+  70%  { box-shadow: 0 0 0 9px rgba(131, 140, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(131, 140, 255, 0); }
+}
 
 .banner {
-  background: var(--amber);
-  color: #000;
+  border-radius: var(--r);
+  padding: 13px 15px;
   text-align: center;
-  padding: 8px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-family: var(--disp);
+  font-weight: 600; font-size: 15px; letter-spacing: -0.01em;
+  color: #fff;
+  background: radial-gradient(120% 180% at 0% 50%,
+    rgba(88, 99, 248, 0.55), rgba(88, 99, 248, 0.14) 60%, transparent);
+  border: 1px solid rgba(88, 99, 248, 0.42);
 }
-.banner.wait { background: #000; color: var(--amber-dim); border: 1px solid var(--rule); }
-
-/* Dashboard runs on a projector — scale it up and keep it readable at range. */
-.dashboard { font-size: 15px; }
-.dashboard table { font-size: 15px; }
-.dashboard th { font-size: 11px; }
-.dashboard .readout .value { font-size: 30px; }
-.dashboard .ladder .qty { font-size: 34px; }
-.dashboard .ladder .imb .qty { font-size: 40px; }
-.dashboard .die { min-height: 128px; }
-.dashboard .die .pip { font-size: 56px; }
+.banner.wait { background: var(--l2); border-color: var(--rule); color: var(--grey); }
 
 @media print { body { background: #fff; color: #000; } }
 
 /* ===========================================================================
-   NEXT SKIN
-   Hierarchy from thin rules and dim caps labels rather than inverse bars, so
-   the one bright fill on screen can mean "this is what we are waiting for".
+   THE PLAYER SCREEN AND THE BIG BOARD
    Everything caps its width — full bleed was the original problem.
    =========================================================================== */
 
@@ -394,155 +467,338 @@ label.field > span {
    items inside #app, and an auto-margined flex item with only a max-width will
    sit at that width even when the viewport is narrower, scrolling the page
    sideways on a phone. */
-.n-wrap  { width: 100%; min-width: 0; max-width: 460px;  margin: 0 auto; padding: 0 0 20px; }
-.n-board { width: 100%; min-width: 0; max-width: 1500px; margin: 0 auto; padding: 0 8px 20px; }
+.n-wrap  { width: 100%; min-width: 0; max-width: 460px;  margin: 0 auto; padding: 0 0 24px; }
+.n-board { width: 100%; min-width: 0; max-width: 1500px; margin: 0 auto; padding: 0 10px 24px; }
 
 .n-lab {
-  font-size: 9px; letter-spacing: .16em; text-transform: uppercase;
-  color: var(--amber-dim);
+  font-family: var(--mono);
+  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--accent-dim);
 }
 
-/* Section divider — replaces the inverse panel header entirely. */
+/* Section divider — a quiet rule, so the one lit element on screen can mean
+   "this is what the table is waiting for". */
 .n-rule {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 7px 9px 4px;
-  border-bottom: 1px solid var(--rule);
-  font-size: 9px; letter-spacing: .16em; text-transform: uppercase;
-  color: var(--amber-dim);
+  padding: 16px 14px 8px;
+  font-family: var(--mono);
+  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--accent-dim);
 }
-.n-rule span:last-child { color: var(--grey); letter-spacing: .06em; }
+.n-rule span:last-child { color: var(--faint); letter-spacing: 0.06em; text-transform: none; }
+.n-rule.wait { color: var(--faint); }
 
 /* --- player: the standing readout ---------------------------------------- */
 
 .n-strip {
-  display: grid; grid-template-columns: repeat(4, 1fr);
-  gap: 1px; background: var(--rule); border-bottom: 1px solid var(--rule);
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+  padding: 16px 16px 15px;
+  background: linear-gradient(180deg, rgba(88, 99, 248, 0.05), transparent 70%);
 }
-.n-strip > div { background: #000; padding: 6px 9px; }
-.n-strip .n-v { font-size: 19px; font-weight: 700; line-height: 1.15; }
+.n-strip .n-v { font-size: 24px; font-weight: 500; line-height: 1.2; }
+
+/* A second line under each figure. Nothing new is computed — long/short, the
+   fill count and the rank are all on screen already, further down. Bringing
+   them up means the strip answers "how am I doing" without a scroll. */
+.n-sub { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 1px; }
+/* .n-sub ties with a bare .up/.down and wins on order, so the sign colours have
+   to be restated — otherwise the round's move reads grey. */
+.n-sub.up   { color: var(--up); }
+.n-sub.down { color: var(--down); }
+
+/* The mark carries its own path. */
+.markcell { display: flex; align-items: flex-end; gap: 8px; }
+.spark { display: block; margin-bottom: 5px; flex: 0 0 auto; }
 
 /* --- player: the action block -------------------------------------------- */
 
-.n-act        { border: 1px solid var(--amber); margin: 8px; padding: 9px; }
-.n-act.done   { border-color: var(--rule-bright); }
-.n-act.plain  { border-color: var(--rule); }
-.n-act .split { margin-bottom: 6px; }
+.n-act {
+  margin: 14px;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--l2);
+  border: 1px solid var(--rule-bright);
+  box-shadow: var(--lift);
+}
+.n-act.done  { background: var(--l1); }
+.n-act.plain { background: var(--l1); box-shadow: none; }
+.n-act .split { margin-bottom: 10px; }
+
+/* One decision, one control: a two-state choice belongs in a single track, and
+   the secondary choice is set smaller so it does not compete. */
+.n-seg {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  margin-bottom: 10px;
+}
+.n-seg.mode { margin-bottom: 12px; }
+.n-seg button {
+  font-size: 15px; font-weight: 600;
+  background: transparent; color: var(--grey);
+  border: none; border-radius: 999px; padding: 10px 0;
+}
+.n-seg.mode button { font-size: 13px; padding: 7px 0; font-weight: 500; }
+.n-seg button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.05); color: var(--white); border: none; }
+.n-seg button.on { background: var(--accent); color: var(--on-accent); }
+.n-seg button.on.buy  { background: var(--up);   color: #04140A; }
+.n-seg button.on.sell { background: var(--down); color: #1A0605; }
 
 .n-qty {
-  font-size: 34px; font-weight: 700; text-align: right;
-  padding: 4px 10px; margin-bottom: 6px;
+  font-size: 40px; font-weight: 500; text-align: right;
+  padding: 8px 15px; margin-bottom: 11px;
+  letter-spacing: -0.035em;
 }
 
+/* The economics read as a ledger, not as a sentence. */
 .n-econ {
-  display: flex; justify-content: space-between; gap: 10px;
-  font-size: 11px; color: var(--grey); padding: 3px 1px 9px;
+  display: grid; grid-template-columns: 1fr auto; gap: 5px 12px;
+  padding: 2px 2px 14px;
+  font-size: 13px;
 }
-.n-econ b { font-size: 15px; font-weight: 700; color: var(--white); }
-.n-econ i { font-style: normal; color: var(--grey-dark); }
-/* .n-econ b outranks a bare .up/.down, so the sign colours are restated here.
-   Without these the cost reads white and the whole slippage-versus-edge
-   distinction is invisible. */
-.n-econ b.up   { color: var(--up); }
-.n-econ b.down { color: var(--down); }
-.n-econ b.dim  { color: var(--amber-dim); }
+.n-econ .k { color: var(--faint); }
+.n-econ .k i { font-style: normal; opacity: 0.75; }
+.n-econ .val {
+  font-family: var(--mono); font-size: 16px; font-weight: 500;
+  color: var(--white); text-align: right; letter-spacing: -0.028em;
+}
+.n-econ .val.up   { color: var(--up); }
+.n-econ .val.down { color: var(--down); }
+.n-econ .val.dim  { color: var(--grey); }
 
-/* The one element the whole table is waiting on. */
-.n-go   { width: 100%; padding: 16px 0; font-size: 16px; letter-spacing: .22em; }
-.n-pass { margin-top: 5px; font-size: 11px; padding: 6px 0; }
-.n-note {
-  margin: 9px 0 0; font-size: 10px; line-height: 1.45; color: var(--grey);
-}
+.n-go   { width: 100%; padding: 17px 0; font-size: 16px; border-radius: var(--r); }
+.n-pass { margin-top: 8px; width: 100%; font-size: 13px; padding: 9px 0; }
+.n-note { margin: 12px 0 0; font-size: 12px; line-height: 1.5; color: var(--faint); }
 
 .n-done {
-  display: flex; align-items: baseline; gap: 8px;
-  font-size: 17px; font-weight: 700; margin-bottom: 8px;
+  display: flex; align-items: baseline; gap: 10px;
+  font-size: 17px; font-weight: 600; margin-bottom: 12px;
 }
 .n-done .spacer { margin-left: auto; }
-.n-winner { font-size: 22px; font-weight: 700; text-align: center; padding: 10px 0 2px; }
+.n-winner {
+  font-family: var(--mono); font-size: 24px; font-weight: 500;
+  text-align: center; padding: 12px 0 2px; letter-spacing: -0.028em;
+}
 
-.n-waiting { padding: 3px 9px 6px; font-size: 11px; color: var(--grey); }
+.n-waiting { padding: 4px 14px 8px; font-size: 12px; color: var(--faint); }
 
 /* --- cards ---------------------------------------------------------------- */
 
-.n-cards, .n-hand {
-  display: grid; grid-template-columns: repeat(4, 1fr);
-  gap: 1px; background: var(--rule);
-}
-.n-hand { border-bottom: 1px solid var(--rule); }
+.n-cards, .n-hand { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.n-cards { margin-bottom: 14px; }
+.n-hand  { padding: 0 14px; }
 .n-card {
-  background: #000; text-align: center; padding: 6px 4px;
+  background: var(--l3);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  text-align: center;
+  padding: 8px 5px;
 }
-.n-card .g      { font-size: 20px; font-weight: 700; line-height: 1.1; }
-.n-card .picked { font-size: 17px; font-weight: 700; }
-.n-card .held   { font-size: 9px; color: var(--grey); margin-bottom: 4px; }
-.n-card.spent   { opacity: .35; }
+.n-card .g { font-size: 22px; font-weight: 500; line-height: 1.1; }
+.n-card .picked { font-size: 17px; font-weight: 500; }
+.n-card .held { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-bottom: 5px; }
+.n-card.spent { opacity: 0.35; }
 .n-card.up   .g { color: var(--up); }
 .n-card.down .g { color: var(--down); }
 .n-card.multiply .g, .n-card.add .g { color: var(--cyan); }
-.n-card .split { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin: 0; }
-.n-card .split button { padding: 2px 0; font-size: 12px; letter-spacing: 0; }
+.n-card .split { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin: 0; }
+.n-card .split button { padding: 3px 0; font-size: 13px; border-radius: 7px; }
 
 /* --- the arithmetic behind the print -------------------------------------- */
 
 .n-flow {
-  padding: 6px 9px; font-size: 10px; color: var(--grey);
+  padding: 10px 14px; font-size: 12px; color: var(--faint);
   border-bottom: 1px solid var(--rule);
 }
-.n-flow b { color: var(--amber); font-weight: 700; }
-.n-flow i { font-style: normal; color: var(--grey-dark); }
-.n-flow.big {
-  font-size: 14px; padding: 7px 18px; letter-spacing: .02em;
-  border-block: 1px solid var(--rule);
+.n-flow b { font-family: var(--mono); color: var(--white); font-weight: 500; }
+.n-flow i { font-style: normal; opacity: 0.8; }
+.n-flow.big { font-size: 15px; padding: 14px 20px; border-block: 1px solid var(--rule); }
+
+.n-legend {
+  padding: 10px 14px;
+  font-size: 12px; line-height: 1.5; color: var(--faint);
 }
+.n-legend .up, .n-legend .down { font-weight: 600; }
 
 /* --- dashboard ------------------------------------------------------------ */
 
 .n-top {
   display: grid; grid-template-columns: auto 1fr auto;
-  border-bottom: 1px solid var(--rule);
+  align-items: center;
+  background: linear-gradient(180deg, rgba(88, 99, 248, 0.05), transparent 70%);
+  border-block: 1px solid var(--rule);
 }
-.n-mark  { padding: 12px 20px; border-right: 1px solid var(--rule); }
+.n-mark { padding: 16px 22px; border-right: 1px solid var(--rule); }
+.n-mark .markcell { align-items: flex-end; gap: 14px; }
 .n-mark .m {
-  font-size: 68px; font-weight: 700; line-height: .88;
-  letter-spacing: -.03em; color: var(--amber);
+  font-family: var(--mono);
+  font-size: 68px; font-weight: 500; line-height: 0.9;
+  letter-spacing: -0.04em; color: #fff;
 }
-.n-mark .d { font-size: 20px; font-weight: 700; margin-top: 3px; }
+.n-mark .d { font-family: var(--mono); font-size: 20px; font-weight: 500; margin-top: 6px; }
 .n-print {
-  padding: 12px 20px; border-left: 1px solid var(--rule);
-  text-align: right; min-width: 140px;
+  padding: 16px 22px; border-left: 1px solid var(--rule);
+  text-align: right; min-width: 150px;
 }
-.n-print .p { font-size: 40px; font-weight: 700; line-height: 1; color: var(--amber); }
+.n-print .p { font-family: var(--mono); font-size: 42px; font-weight: 500; line-height: 1; color: #fff; }
 .n-top .ladder { border: none; }
 
-.n-cols { display: grid; grid-template-columns: 1.1fr .9fr; }
+.n-cols { display: grid; grid-template-columns: 1.1fr 0.9fr; }
 .n-cols > div:first-child { border-right: 1px solid var(--rule); }
-.n-pad { padding: 10px 12px; }
-.n-host { display: flex; flex-direction: column; gap: 7px; }
-.n-host .row { gap: 5px; }
+.n-pad { padding: 14px; }
+.n-host { display: flex; flex-direction: column; gap: 10px; }
+.n-host .row { gap: 8px; }
 
-.n-lobby { text-align: center; padding: 20px 0 14px; border-bottom: 1px solid var(--rule); }
-.n-code  { font-size: 54px; font-weight: 700; letter-spacing: .3em; color: var(--amber); }
-.n-seats { margin-top: 12px; display: flex; justify-content: center; }
+.n-lobby { text-align: center; padding: 26px 0 20px; border-bottom: 1px solid var(--rule); }
+.n-code { font-size: 56px; font-weight: 500; letter-spacing: 0.24em; color: #fff; }
+.n-seats { margin-top: 16px; display: flex; justify-content: center; }
 
 .n-foot {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 9px 0; margin-top: 10px;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 14px 14px 0; margin-top: 14px;
   border-top: 1px solid var(--rule);
 }
 .n-foot .spacer { margin-left: auto; }
-button.tiny { padding: 3px 8px; font-size: 10px; }
 
 /* Read from across a room: the dashboard scales up, the player screen does not. */
-.n-board { font-size: 15px; }
-.n-board table { font-size: 14px; }
-.n-board .ladder .qty { font-size: 32px; }
-.n-board .ladder .imb .qty { font-size: 40px; }
-.n-board .die { min-height: 112px; }
-.n-board .die .pip { font-size: 48px; }
+.n-board { font-size: 16px; }
+.n-board table { font-size: 15px; }
+.n-board .ladder .qty { font-size: 34px; }
+.n-board .ladder .imb .qty { font-size: 42px; }
 
 @media (max-width: 900px) {
   .n-top  { grid-template-columns: 1fr; }
   .n-cols { grid-template-columns: 1fr; }
   .n-cols > div:first-child { border-right: none; }
   .n-mark, .n-print { border: none; text-align: left; }
+}
+
+/* ===========================================================================
+   DICE BOARD
+   A die alone says nothing. What matters is the roll, what the cards added, and
+   which side of the line that lands on — so each face carries its own
+   arithmetic and its own consequence in words.
+   =========================================================================== */
+
+.n-dice { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+
+.n-die {
+  border: 1px solid var(--rule);
+  background: var(--l2);
+  border-radius: var(--r);
+  padding: 12px 7px 13px;
+  text-align: center;
+  display: flex; flex-direction: column; gap: 4px; align-items: center;
+  min-height: 136px;
+}
+.n-die-cap {
+  font-family: var(--mono);
+  font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--accent-dim);
+}
+.n-pip { font-size: 36px; font-weight: 500; line-height: 1; color: var(--grey-dark); }
+.n-die.locked         { border-color: var(--rule-bright); }
+.n-die.locked .n-pip  { color: var(--accent-bright); }
+.n-die.next {
+  border-color: var(--accent);
+  background: var(--l3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 3px rgba(88, 99, 248, 0.16);
+}
+.n-die.rolling .n-pip { animation: tumble 90ms steps(1) infinite; color: var(--accent-bright); }
+
+@keyframes tumble {
+  0%   { opacity: 1; transform: translateY(0); }
+  50%  { opacity: 0.35; transform: translateY(-3px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* The arithmetic: roll, modifier, total, and the bar it had to clear. */
+.n-die-sum { font-family: var(--mono); font-size: 11px; color: var(--faint); line-height: 1.35; }
+.n-die-sum b { color: var(--white); font-weight: 500; }
+.n-die-sum i { font-style: normal; opacity: 0.75; }
+
+.n-die-verdict {
+  font-family: var(--disp);
+  font-size: 14px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.15;
+}
+.n-die-ask   { font-size: 11px; color: var(--faint); line-height: 1.4; }
+.n-die-ask b { font-family: var(--mono); color: var(--accent-bright); font-weight: 500; }
+.n-die-mod   { font-family: var(--mono); font-size: 10px; color: var(--accent-dim); }
+
+/* Outcome colours have to beat the generic .up/.down utilities. */
+.n-die-verdict.up   { color: var(--up); }
+.n-die-verdict.down { color: var(--down); }
+.n-die-verdict.cyan { color: var(--cyan); }
+.n-die-verdict.dim  { color: var(--grey); }
+.n-die.up   { border-color: rgba(53, 208, 127, 0.45); }
+.n-die.down { border-color: rgba(255, 94, 91, 0.45); }
+
+.n-outcome {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin-top: 10px; padding: 12px 14px;
+  border: 1px solid var(--rule-bright);
+  background: var(--l2);
+  border-radius: var(--r);
+  box-shadow: var(--lift);
+  font-size: 15px; font-weight: 600;
+}
+.n-outcome .spacer { margin-left: auto; }
+.n-outcome .dim    { font-weight: 400; }
+.n-outcome b       { font-family: var(--mono); font-weight: 500; letter-spacing: -0.028em; }
+/* A chip rather than a divider rule: on a narrow screen this wraps onto its own
+   line, where a left border reads as a stray tick floating in space. */
+.n-outcome .n-yours {
+  font-family: var(--mono); font-weight: 500; letter-spacing: -0.028em;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 999px;
+  padding: 2px 11px;
+}
+
+.n-replay { padding: 0 14px 4px; }
+
+/* ===========================================================================
+   ATTENTION
+   Exactly one thing on screen should be shouting at any moment — and it should
+   read as lit rather than as an alert banner.
+   =========================================================================== */
+
+.n-cta {
+  margin: 2px 14px 0;
+  padding: 12px 15px;
+  border-radius: var(--r);
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  font-weight: 600; font-size: 15px; letter-spacing: -0.01em;
+  color: #fff;
+  background: radial-gradient(120% 180% at 0% 50%,
+    rgba(88, 99, 248, 0.55), rgba(88, 99, 248, 0.14) 60%, transparent);
+  border: 1px solid rgba(88, 99, 248, 0.42);
+  animation: cta-in 260ms ease-out;
+}
+@keyframes cta-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; } }
+
+.n-cta .who { display: flex; align-items: center; min-width: 0; }
+.n-cta .s {
+  font-family: var(--mono); font-size: 12px; font-weight: 400;
+  color: var(--accent-bright); white-space: nowrap;
+}
+.n-cta .dot {
+  width: 7px; height: 7px; border-radius: 999px;
+  background: var(--accent-bright);
+  margin-right: 9px; flex: 0 0 auto;
+  animation: pulse-dot 2.4s ease-out infinite;
+}
+
+/* Everything that is not the current move steps back until it is done. */
+.n-secondary { opacity: 0.38; transition: opacity 160ms linear; }
+.n-secondary.lit { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .n-cta, .n-cta .dot, .blink::after, .n-die.rolling .n-pip { animation: none; }
+  .n-secondary, button, button.primary { transition: none; }
+  .flash-up, .flash-down { animation: none; }
+}
+
+@media (max-width: 460px) {
+  .n-dice { grid-template-columns: repeat(2, 1fr); }
 }
