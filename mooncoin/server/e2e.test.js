@@ -70,12 +70,16 @@ test.after(() => proc?.kill('SIGKILL'));
 test('serves the app shell on a room path', async () => {
   const res = await fetch(`${BASE}/ABCD`);
   assert.equal(res.status, 200);
-  assert.match(await res.text(), /MOONCOIN TERMINAL/);
+  assert.match(await res.text(), /<title>Mooncoin<\/title>/);
 });
 
 test('static assets are served', async () => {
   assert.equal((await fetch(`${BASE}/style.css`)).status, 200);
   assert.equal((await fetch(`${BASE}/app.js`)).status, 200);
+
+  const font = await fetch(`${BASE}/fonts/inter.woff2`);
+  assert.equal(font.status, 200);
+  assert.equal(font.headers.get('content-type'), 'font/woff2');
 });
 
 test('directory traversal is refused', async () => {

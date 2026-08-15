@@ -47,7 +47,22 @@ const money = (n) => {
   return v < 0 ? `-$${s}` : `$${s}`;
 };
 
+/**
+ * The same amount with the currency symbol set smaller and dimmer, so $112
+ * reads as money rather than as a four-character string.
+ *
+ * Display figures only. In a table the symbol is doing column work, and
+ * shrinking it just makes the column ragged.
+ */
+const moneyHTML = (n) => money(n).replace('$', '<span class="cur">$</span>');
+
 const px = (n, d = 2) => (n === null || n === undefined ? '—' : Number(n).toFixed(d));
+
+const ordinal = (n) => {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
+};
 
 const seatKey = (code) => `mooncoin:player:${code}`;
 
@@ -174,9 +189,12 @@ const net = {
       const res = await fetch(`/api/game?${qs}`, { cache: 'no-store' });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
-      apply(body);
+      // Connected before the fold, not after: apply() renders, and an unchanged
+      // payload will not redraw again — so setting the flag afterwards leaves
+      // the status pill reading Reconnecting over a screen that is plainly live.
       this.failures = 0;
       S.connected = true;
+      apply(body);
     } catch (err) {
       this.failures++;
       // One dropped poll is noise; a run of them is worth showing.
@@ -319,16 +337,18 @@ const act = {
 
 function topbar(extra = '') {
   const st = S.state;
-  const conn = S.connected
-    ? '<span class="chip live">LIVE</span>'
-    : '<span class="chip off">RECONNECTING</span>';
-  const round = st && st.round > 0 ? `R${st.round}/${st.maxRounds}` : '—';
+  // Off a table there is nothing to be connected to, so the status says nothing
+  // rather than crying reconnecting at the front door.
+  const conn = !S.code ? ''
+    : S.connected ? '<span class="chip live">Live</span>'
+    : '<span class="chip off">Reconnecting</span>';
+  const round = st && st.round > 0 ? `R${st.round}/${st.maxRounds}` : '';
   return `
     <div class="topbar">
-      <span>MOONCOIN</span>
-      <span class="chip">${esc(S.code ?? '')}</span>
-      <span>${esc(round)}</span>
-      <span>${esc(st ? PHASE_LABEL[st.phase] : '')}</span>
+      <span class="brand">Mooncoin</span>
+      ${S.code ? `<span class="chip">${esc(S.code)}</span>` : ''}
+      ${round ? `<span>${esc(round)}</span>` : ''}
+      <span class="phase">${esc(st ? PHASE_LABEL[st.phase] : '')}</span>
       ${extra}
       <span class="spacer"></span>
       ${conn}
@@ -348,6 +368,39 @@ function alerts() {
     ${ephemeral}
     ${S.error ? `<div class="err">${esc(S.error)}</div>` : ''}
     ${S.notice ? `<div class="ok">${esc(S.notice)}</div>` : ''}`;
+}
+
+/** The mark's path so far — the opening print, then every settled round. */
+const markPath = (st) => [st.openingPrice, ...st.history.map((h) => h.mark)];
+
+/**
+ * A price path beside the price.
+ *
+ * The single most useful thing you can put next to a number is where it has
+ * been, and at this size it costs nothing. It also teaches the regime rule
+ * quietly, because a streak is visible as a shape before anyone works out the
+ * arithmetic behind it.
+ */
+function sparkline(values, w = 52, h = 20) {
+  const pts = values.slice(-6);
+  if (pts.length < 2) return '';
+
+  const lo = Math.min(...pts);
+  const span = Math.max(...pts) - lo || 1;
+  const xy = pts.map((v, i) => [
+    (i / (pts.length - 1)) * w,
+    h - 2 - ((v - lo) / span) * (h - 4),
+  ]);
+  const line = xy.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+  const [ex, ey] = xy[xy.length - 1];
+
+  return `
+    <svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+      <path d="${line} L${w} ${h} L0 ${h} Z" fill="rgba(131,140,255,.13)"/>
+      <path d="${line}" fill="none" stroke="#838CFF" stroke-width="1.5"
+            stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="${(h / 9).toFixed(1)}" fill="#838CFF"/>
+    </svg>`;
 }
 
 function ladder(book) {
@@ -490,7 +543,7 @@ function diceBoard(view) {
         <span class="dim">${priorMark} →</span>
         <b>${priorMark + chg}</b>
         ${yours !== null && yours !== undefined && yours !== 0
-          ? `<span class="n-yours ${cls(yours)}">${yours > 0 ? '+' : ''}${money(yours)} to you</span>` : ''}
+          ? `<span class="n-yours ${cls(yours)}">${yours > 0 ? '+' : ''}${moneyHTML(yours)} to you</span>` : ''}
       </div>`;
   }
 
@@ -810,15 +863,44 @@ function rule(label, right = '') {
   return `<div class="n-rule"><span>${label}</span><span>${right}</span></div>`;
 }
 
+/**
+ * The standing readout, with a second line under every figure.
+ *
+ * Nothing here is newly computed — long/short, the fill count and the rank are
+ * all on screen already, further down. Bringing them up means the strip answers
+ * "how am I doing" without a scroll.
+ */
 function positionStrip(st, me) {
-  const cell = (label, value, klass = '') => `
-    <div><div class="n-lab">${label}</div><div class="n-v ${klass}">${value}</div></div>`;
+  const rank = st.standings.findIndex((p) => p.id === me.id) + 1;
+  const chg = st.history.length ? st.history[st.history.length - 1].chg : null;
+  const fills = me.fills.length;
+
   return `
     <div class="n-strip">
-      ${cell('Mark', st.mark, `am ${ui.markFlash ?? ''}`)}
-      ${cell('Position', signed(me.shares), cls(me.shares))}
-      ${cell('Avg', me.avgPrice === null ? '—' : px(me.avgPrice))}
-      ${cell('P/L', money(me.pl), cls(me.pl))}
+      <div>
+        <div class="n-lab">Mark</div>
+        <div class="markcell">
+          <div class="n-v ${ui.markFlash ?? ''}">${st.mark}</div>
+          ${sparkline(markPath(st))}
+        </div>
+        <div class="n-sub ${chg === null ? '' : cls(chg)}">
+          ${chg === null ? 'opening' : `${signed(chg)} last round`}</div>
+      </div>
+      <div>
+        <div class="n-lab">Position</div>
+        <div class="n-v ${cls(me.shares)}">${signed(me.shares)}</div>
+        <div class="n-sub">${me.shares > 0 ? 'long' : me.shares < 0 ? 'short' : 'flat'}</div>
+      </div>
+      <div>
+        <div class="n-lab">Avg</div>
+        <div class="n-v">${me.avgPrice === null ? '—' : px(me.avgPrice)}</div>
+        <div class="n-sub">${fills} fill${fills === 1 ? '' : 's'}</div>
+      </div>
+      <div>
+        <div class="n-lab">P/L</div>
+        <div class="n-v ${cls(me.pl)}">${moneyHTML(me.pl)}</div>
+        <div class="n-sub">${rank ? `${ordinal(rank)} of ${st.seated}` : '—'}</div>
+      </div>
     </div>`;
 }
 
@@ -841,19 +923,26 @@ function orderTicket(st, me) {
   const e = orderEconomics(st);
   return `
     <div class="n-act">
-      <div class="split">
+      ${/* One decision, one control: a two-state choice belongs in a single
+            track, and the secondary choice is set smaller so it does not
+            compete with the primary one. */ ''}
+      <div class="n-seg">
         <button class="buy ${ui.side === 'BUY' ? 'on' : ''}" data-side="BUY">Buy</button>
         <button class="sell ${ui.side === 'SELL' ? 'on' : ''}" data-side="SELL">Sell</button>
       </div>
       <input id="qty" class="n-qty" inputmode="numeric" autocomplete="off"
              placeholder="0" value="${esc(ui.qty)}" aria-label="Quantity">
-      <div class="split">
+      <div class="n-seg mode">
         <button class="${ui.orderType === 'MARKET' ? 'on' : ''}" data-otype="MARKET">Market</button>
         <button class="${ui.orderType === 'LIMIT' ? 'on' : ''}" data-otype="LIMIT">Limit</button>
       </div>
+      ${/* A ledger, not a sentence: labels left, figures right-aligned in a
+            column you can read down. */ ''}
       <div class="n-econ">
-        <span>${e.fillsLabel} <b>${e.fillsValue}</b> <i>${e.fillsNote}</i></span>
-        <span>${e.costLabel} <b class="${e.costClass}">${e.costValue}</b></span>
+        <span class="k">${e.fillsLabel} <i>${e.fillsNote}</i></span>
+        <span class="val">${e.fillsValue}</span>
+        <span class="k">${e.costLabel}</span>
+        <span class="val ${e.costClass}">${e.costValue}</span>
       </div>
       <button class="primary n-go" id="submitOrder">Confirm</button>
       <button id="pass" class="wide n-pass">Pass this round</button>
@@ -909,7 +998,10 @@ function cardTicket(st, me) {
  */
 function callToAction(label, right, mine) {
   return mine
-    ? `<div class="n-cta"><span>▶ ${label}</span><span>${right}</span></div>`
+    ? `<div class="n-cta">
+         <span class="who"><i class="dot"></i>${label}</span>
+         <span class="s">${right}</span>
+       </div>`
     : `<div class="n-rule wait"><span>${label}</span><span>${right}</span></div>`;
 }
 
@@ -981,7 +1073,7 @@ function renderPlayer() {
     const won = w && w.id === me.id;
     action = `<div class="n-act plain">
       <div class="n-winner ${won ? 'up' : ''}">${won ? 'You win' : esc(w?.name ?? '—')}
-        <span class="${cls(w?.pl ?? 0)}">${w ? money(w.pl) : ''}</span></div></div>`;
+        <span class="${cls(w?.pl ?? 0)}">${w ? moneyHTML(w.pl) : ''}</span></div></div>`;
     cta = callToAction('Market closed', `${st.maxRounds} rounds played`, false);
   }
 
@@ -1088,7 +1180,10 @@ function renderDashboard(hostMode = false) {
       <div class="n-top">
         <div class="n-mark">
           <div class="n-lab">Mark</div>
-          <div class="m ${ui.markFlash ?? ''}">${st.mark}</div>
+          <div class="markcell">
+            <div class="m ${ui.markFlash ?? ''}">${st.mark}</div>
+            ${sparkline(markPath(st), 132, 46)}
+          </div>
           <div class="d ${cls(chg)}">${st.history.length ? signed(chg) : 'opening'}</div>
         </div>
         ${ladder(book)}
