@@ -390,6 +390,56 @@ test('a two-sided quote never trades with itself', () => {
   assert.deepEqual(r.trades.map(trade), [['alice', 'HOUSE', 1, 10]]);
 });
 
+test('several players crossing each other all match, best prices first', () => {
+  // House takes 1 from the cheapest offer; the rest of the book then crosses
+  // among the players, and every one of those trades prints at the clearing $8.
+  const r = clear(mkt('BUY', 1), [
+    ask('alice', 1, 8),
+    ask('bob', 2, 10),
+    ask('carol', 2, 14),
+    bid('dave', 3, 20),
+    bid('erin', 1, 12),
+  ]);
+
+  assert.equal(r.price, 8);
+  assert.deepEqual(r.trades.map(trade), [
+    ['alice', 'HOUSE', 1, 8],
+    ['bob', 'dave', 2, 8],     // best bid takes the best remaining offer
+    ['carol', 'dave', 1, 8],   // and walks up into the next one
+  ]);
+  // Erin bid 12 and Carol's remaining offer is 14, so they never trade — being
+  // last in the queue is not the reason, the price is.
+  assert.equal(r.trades.some((t) => t.buyer === 'erin'), false);
+});
+
+test("passing over a player's own offer does not retire it", () => {
+  // Alice is both the best bid and the only cheap offer. She cannot trade with
+  // herself, but Bob is entitled to that offer — an earlier version advanced the
+  // offer pointer permanently on a self-cross and lost it.
+  const r = clear(mkt('SELL', 1), [
+    bid('alice', 1, 30),
+    bid('bob', 5, 25),
+    ask('alice', 5, 9),
+  ]);
+
+  assert.equal(r.price, 30, 'the house sold into the best bid');
+  assert.deepEqual(r.trades.map(trade), [
+    ['HOUSE', 'alice', 1, 30],
+    ['alice', 'bob', 5, 30],   // Bob gets Alice's offer; Alice does not self-trade
+  ]);
+});
+
+test('a bid only matches offers it actually crosses', () => {
+  const r = clear(mkt('BUY', 1), [
+    ask('alice', 1, 8),
+    ask('bob', 5, 40),
+    bid('carol', 5, 12),
+  ]);
+  assert.equal(r.price, 8);
+  assert.deepEqual(r.trades.map(trade), [['alice', 'HOUSE', 1, 8]],
+    "carol's 12 bid never reaches bob's 40 offer");
+});
+
 test('size wins a price tie, then P/L', () => {
   const quotes = [ask('alice', 1, 10), ask('bob', 3, 10), ask('carol', 3, 10)];
   const rank = new Map([['carol', 500], ['bob', 100]]);

@@ -933,3 +933,33 @@ label.field > span {
 
 .o-setup { grid-template-columns: 1fr auto; align-items: end; }
 .o-toggle { margin: 6px 0 0; min-width: 210px; }
+
+/* --- setup: which rounds carry an expiry ---------------------------------- */
+
+.o-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 7px 0 0; }
+.o-chip {
+  font-family: var(--mono);
+  font-size: 13px; letter-spacing: 0.04em;
+  padding: 7px 14px; border-radius: 999px;
+  background: transparent; color: var(--grey);
+  border: 1px solid var(--ring-hi);
+}
+.o-chip:hover:not(:disabled) { background: var(--l3); color: var(--white); }
+.o-chip.on,
+.o-chip.on:hover:not(:disabled) {
+  background: var(--accent); color: var(--on-accent); border-color: var(--accent);
+}
+
+/* What each round will actually auction — the cost of a pick, before the table
+   discovers it the hard way. */
+.o-plan { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); }
+.o-gates { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.o-gate {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  min-width: 34px; padding: 5px 6px;
+  border-radius: 8px; background: var(--l2); border: 1px solid var(--ring);
+  font-family: var(--mono); font-size: 14px; font-weight: 500; color: var(--white);
+}
+.o-gate i {
+  font-style: normal; font-size: 9px; letter-spacing: 0.1em; color: var(--faint);
+}

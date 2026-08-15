@@ -867,18 +867,27 @@ function wireHost(st, joinUrl) {
   on('start', () => {
     const rounds = document.getElementById('cfgRounds');
     const cards = document.getElementById('cfgCards');
-    const expiries = document.getElementById('cfgExpiries');
     if (rounds && cards) {
-      act.config({
-        maxRounds: Number(rounds.value),
-        cardQty: Number(cards.value),
-        optionRules: { expiryCount: Number(expiries?.value) || 2 },
-      });
+      act.config({ maxRounds: Number(rounds.value), cardQty: Number(cards.value) });
     }
     setTimeout(act.start, 60);   // let the config land before the deal
   });
   on('cfgOptionsOn', () => act.config({ options: true }));
   on('cfgOptionsOff', () => act.config({ options: false }));
+
+  document.querySelectorAll('[data-expiry]').forEach((b) => {
+    b.onclick = () => {
+      const r = Number(b.dataset.expiry);
+      const now = new Set(st.expiries ?? []);
+      now.has(r) ? now.delete(r) : now.add(r);
+      act.config({ optionRules: { fixedExpiries: [...now] } });
+    };
+  });
+
+  // The chips are drawn from the game length, so it has to commit as it is
+  // typed rather than waiting for the market to open.
+  const rounds = document.getElementById('cfgRounds');
+  if (rounds) rounds.onchange = () => act.config({ maxRounds: Number(rounds.value) });
   on('force', act.force);
   on('roll', act.roll);
   on('reset', act.reset);
@@ -1248,6 +1257,46 @@ function quoteTicket(st, me) {
     </div>`;
 }
 
+/**
+ * Pick which rounds carry an expiry.
+ *
+ * The current round always expires — the front month is a pure bet on one dice
+ * roll and it is what the layer is built to teach — so these chips are the
+ * longer-dated ones stacked on top of it. Underneath, what that actually costs:
+ * each live table is a gate the whole table has to clear, and the count tapers
+ * on its own as expiries pass.
+ */
+function expiryPicker(st) {
+  const picked = new Set(st.expiries ?? []);
+  const chips = [];
+  for (let r = 2; r <= st.maxRounds; r++) {
+    chips.push(`<button class="o-chip ${picked.has(r) ? 'on' : ''}" data-expiry="${r}">R${r}</button>`);
+  }
+
+  // How many auction gates each round will actually carry. That is the cost of
+  // a pick, and it is the thing that decides whether a round drags.
+  const gates = [];
+  let worst = 1;
+  for (let r = 1; r <= st.maxRounds; r++) {
+    const n = 1 + [...picked].filter((e) => e > r).length;
+    worst = Math.max(worst, n);
+    gates.push(`<span class="o-gate"><i>R${r}</i>${n}</span>`);
+  }
+
+  return `
+    <div>
+      <span class="n-lab">Expiries — the current round always expires</span>
+      <div class="o-chips">${chips.join('') || '<span class="dim">a one-round game</span>'}</div>
+      <div class="o-plan">
+        <span class="n-lab">Auction gates per round</span>
+        <div class="o-gates">${gates.join('')}</div>
+      </div>
+      <p class="n-note">Options trade first each round, and every live expiry is
+        its own gate — so your longest round runs ${worst} auction gate${worst === 1 ? '' : 's'}
+        before the stock even opens.</p>
+    </div>`;
+}
+
 /** The player's own option book: open contracts, then what has expired. */
 function optionBlotter(me, st) {
   const open = me.optionPositions ?? [];
@@ -1533,23 +1582,17 @@ function renderDashboard(hostMode = false) {
                 </div>
                 ${/* A segmented control, not a button: which state you are in
                       has to be readable without pressing anything. */ ''}
-                <div class="o-setup">
-                  <div>
-                    <span class="n-lab">Options</span>
-                    <div class="n-seg mode o-toggle">
-                      <button id="cfgOptionsOff" class="${st.options ? '' : 'on'}">Stock only</button>
-                      <button id="cfgOptionsOn" class="${st.options ? 'on' : ''}">Options</button>
-                    </div>
+                ${/* A segmented control, not a button: which state you are in
+                      has to be readable without pressing anything. */ ''}
+                <div>
+                  <span class="n-lab">Options</span>
+                  <div class="n-seg mode o-toggle">
+                    <button id="cfgOptionsOff" class="${st.options ? '' : 'on'}">Stock only</button>
+                    <button id="cfgOptionsOn" class="${st.options ? 'on' : ''}">Options</button>
                   </div>
-                  <label class="field" style="margin:0">
-                    <span>Expiries</span>
-                    <input id="cfgExpiries" class="num" value="${st.expiryCount ?? 2}"
-                           inputmode="numeric" ${st.options ? '' : 'disabled'}>
-                  </label>
                 </div>
-                <p class="n-note">${st.options
-                  ? 'Options trade first each round, one gate per expiry — so two expiries is a longer round than one.'
-                  : 'The stock game, exactly as it plays today.'}</p>
+                ${st.options ? expiryPicker(st) : `
+                  <p class="n-note">The stock game, exactly as it plays today.</p>`}
                 <button class="primary n-go" id="start" ${st.seated < 1 ? 'disabled' : ''}>
                   ${st.seated < 1 ? 'Waiting for players' : `Open the market (${st.seated} seated)`}
                 </button>` : ''}

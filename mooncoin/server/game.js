@@ -25,7 +25,7 @@ import {
 import {
   OPTION_DEFAULTS, createOptionsState, createPlayerOptions, indicateOrders,
   expiryTables, strikeGrid, revealOrders, clearContract, makeQuote, makePosition,
-  contractKey, optionPL, settleExpiring, intrinsic,
+  contractKey, optionPL, settleExpiring, intrinsic, fixedExpiriesFor,
 } from './options.js';
 
 export const PHASES = ['lobby', 'auction', 'orders', 'cards', 'rolling', 'complete'];
@@ -623,6 +623,14 @@ export function updateConfig(game, patch) {
     ...OPTION_DEFAULTS, ...(game.config.optionRules ?? {}), ...(patch.optionRules ?? {}),
   };
   next.optionRules.expiryCount = clampInt(next.optionRules.expiryCount, 1, 3);
+  // An explicit pick survives as an explicit pick, pruned to the game length —
+  // shortening the game must not leave an expiry hanging past the last round.
+  if (Array.isArray(next.optionRules.fixedExpiries)) {
+    next.optionRules.fixedExpiries = [...new Set(next.optionRules.fixedExpiries)]
+      .map((e) => Math.trunc(Number(e)))
+      .filter((e) => Number.isInteger(e) && e >= 1 && e <= next.maxRounds)
+      .sort((a, b) => a - b);
+  }
   if (game.players.length * next.cardQty > 100) {
     throw new Error(`${game.players.length} players x ${next.cardQty} cards exceeds the 100-card deck`);
   }
@@ -689,7 +697,9 @@ export function publicState(game) {
     round: game.round,
     maxRounds: game.config.maxRounds,
     cardQty: game.config.cardQty,
-    expiryCount: game.config.optionRules.expiryCount,
+    // The effective set, so the lobby shows what is actually selected rather
+    // than what was typed.
+    expiries: fixedExpiriesFor(game.config.maxRounds, game.config.optionRules),
     mark: game.mark,
     openingPrice: game.config.openingPrice,
     // The options board is public in full. Between indicate and reveal a house

@@ -113,38 +113,38 @@ export function isTradeable(strike, anchor, cfg = OPTION_DEFAULTS) {
 }
 
 /**
+ * The longer-dated expiries this game trades, whatever the current round is.
+ *
+ * Either the host's explicit picks, or derived from expiryCount in priority
+ * order — full-game exposure first, then the midpoint — so trimming the count
+ * drops the least interesting table rather than an arbitrary one.
+ */
+export function fixedExpiriesFor(maxRounds, cfg = OPTION_DEFAULTS) {
+  const picked = cfg.fixedExpiries
+    ?? [maxRounds, Math.ceil(maxRounds / 2)]
+      .slice(0, Math.max(0, (cfg.expiryCount ?? OPTION_DEFAULTS.expiryCount) - 1));
+  return [...new Set(picked)]
+    .filter((e) => Number.isInteger(e) && e >= 1 && e <= maxRounds)
+    .sort((a, b) => a - b);
+}
+
+/**
  * Which expiry tables are live this round.
  *
  * The spec names three — the current round, R3 and R5 — which works for the
- * five-round default and breaks for every other length the host can set. So the
- * fixed expiries are config, and two rules keep the set sane as the game runs
- * out of road:
- *
- *   - an expiry in the past is not tradeable, so it drops off
- *   - an expiry equal to the current round is already the current-round table,
- *     so it is not listed twice
- *
- * Consequence worth knowing before you see it at the table: with the defaults, a
- * five-round game auctions three tables in rounds 1–2, two in rounds 3–4, and
- * one in round 5. The spec does not say what should happen here (§10.8 raises
- * the adjacent question of whether three tables is too many for a Zoom round).
+ * five-round default and breaks for every other length the host can set, so the
+ * set is config. Two rules keep it sane as the game runs out of road: an expiry
+ * in the past has gone, and one equal to this round is already the front month
+ * rather than a second table. So the count naturally tapers toward the end.
  */
 export function expiryTables(round, maxRounds, cfg = OPTION_DEFAULTS) {
-  const count = cfg.expiryCount ?? OPTION_DEFAULTS.expiryCount;
-
-  // Derived in priority order — the current round always, then full-game
-  // exposure, then the midpoint — so trimming the count drops the least
-  // interesting table rather than an arbitrary one. Display order is by expiry.
-  const fixed = cfg.fixedExpiries
-    ?? [maxRounds, Math.ceil(maxRounds / 2)].slice(0, Math.max(0, count - 1));
-
-  const live = fixed.filter((e) => e > round && e <= maxRounds);
-  const wanted = cfg.fixedExpiries ? live : live.slice(0, Math.max(0, count - 1));
-
+  // The current round always expires — the front month is a pure bet on one
+  // dice roll, and it is the thing the whole layer is built to teach. An expiry
+  // in the past is gone; one equal to this round is already the front month.
   return [
     { key: `r${round}`, expiry: round, label: 'Current round', current: true },
-    ...[...new Set(wanted)]
-      .sort((a, b) => a - b)
+    ...fixedExpiriesFor(maxRounds, cfg)
+      .filter((e) => e > round)
       .map((e) => ({ key: `r${e}`, expiry: e, label: `Round ${e}`, current: false })),
   ];
 }
@@ -380,18 +380,27 @@ export function clearContract(order, quotes, opts = {}) {
   const bids = rest('bid');
   const asks = rest('ask');
 
-  let i = 0, j = 0;
-  while (i < bids.length && j < asks.length && bids[i].price >= asks[j].price) {
-    // A player quoting both sides must not trade with themselves.
-    if (bids[i].playerId === asks[j].playerId) { j++; continue; }
-    const take = Math.min(bids[i].qty, asks[j].qty);
-    bids[i].qty -= take;
-    asks[j].qty -= take;
-    result.trades.push({
-      buyer: bids[i].playerId, seller: asks[j].playerId, qty: take, price, house: false,
-    });
-    if (bids[i].qty === 0) i++;
-    if (asks[j].qty === 0) j++;
+  // Best bid against best offer, repeatedly, until nothing crosses. Both books
+  // are already in priority order — price first, then size, then P/L, then a
+  // stable coin flip — so this is a plain price-priority match over however many
+  // players are in the contract.
+  //
+  // The self-cross skip is per-bid, not global. Passing over a player's own
+  // offer must not retire it: the next bidder along is entitled to it, and an
+  // earlier version advanced the offer pointer permanently and quietly lost
+  // that liquidity.
+  for (const bid of bids) {
+    for (const ask of asks) {
+      if (bid.qty <= 0) break;
+      if (ask.qty <= 0 || ask.playerId === bid.playerId) continue;
+      if (bid.price < ask.price) break;   // asks ascend; nothing further crosses
+      const take = Math.min(bid.qty, ask.qty);
+      bid.qty -= take;
+      ask.qty -= take;
+      result.trades.push({
+        buyer: bid.playerId, seller: ask.playerId, qty: take, price, house: false,
+      });
+    }
   }
 
   return result;
