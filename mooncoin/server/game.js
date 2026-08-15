@@ -19,7 +19,10 @@ import {
   DEFAULTS, deal, emptyHand, matchOrders, cardEffects, regimeEffects,
   resolveDice, position, rollDie,
 } from './engine.js';
-import { OPTION_DEFAULTS, createOptionsState, createPlayerOptions } from './options.js';
+import {
+  OPTION_DEFAULTS, createOptionsState, createPlayerOptions, indicateOrders,
+  expiryTables, strikeGrid,
+} from './options.js';
 
 export const PHASES = ['lobby', 'orders', 'cards', 'rolling', 'complete'];
 
@@ -117,18 +120,28 @@ export function startGame(game, rng = Math.random) {
   game.mark = game.config.openingPrice;
   game.phase = 'orders';
   game.history = [];
-  clearRound(game);
+  clearRound(game, rng);
   logLine(game, `Game opened at ${game.config.openingPrice} — ${game.config.maxRounds} rounds, ${game.config.cardQty} cards each`);
   return game;
 }
 
-function clearRound(game) {
+function clearRound(game, rng = Math.random) {
   game.pendingOrders = {};
   game.pendingCards = {};
   game.ready = { orders: {}, cards: {} };
   game.reveal = null;
   game.net = null;
   game.dice = [null, null, null, null];
+
+  // Indicate the new round's house orders. Side and size are not decided here —
+  // they are generated at reveal, which is stage 3's job.
+  if (game.options) {
+    game.options.orders = indicateOrders(
+      game.round, game.config.maxRounds, game.mark, game.config.optionRules, rng,
+    );
+    game.options.quotes = {};
+    game.options.cleared = null;
+  }
 }
 
 function logLine(game, text) {
@@ -446,9 +459,16 @@ export function publicState(game) {
     cardQty: game.config.cardQty,
     mark: game.mark,
     openingPrice: game.config.openingPrice,
-    // Whether this table is playing the options game at all. The board itself
-    // arrives in stage 2; for now this is the only thing the UI needs to know.
+    // The options board is public in full. Between indicate and reveal a house
+    // order has no side and no size to leak — those values are not withheld,
+    // they have not been generated yet.
     options: game.config.options,
+    optionBoard: game.options ? {
+      anchor: game.mark,
+      tables: expiryTables(game.round, game.config.maxRounds, game.config.optionRules)
+        .map((t) => ({ ...t, strikes: strikeGrid(game.mark, game.config.optionRules) })),
+      orders: game.options.orders,
+    } : null,
     standings: standings(game),
     history: game.history,
     reveal: game.phase === 'orders' ? null : game.reveal,

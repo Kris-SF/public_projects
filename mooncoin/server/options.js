@@ -13,6 +13,11 @@
  * The layer is additive and inert unless `config.options` is on, so the
  * stock-only game keeps its exact behaviour and its exact payloads.
  *
+ * Hidden information is handled by not generating it. A house order carries
+ * `side: null, qty: null` between indicate and reveal — the null is the
+ * prototype's `?`. Nothing needs filtering out of the payload, the DOM or a log,
+ * because until the auction runs those values do not exist.
+ *
  * There is no cash ledger. The spec carries one — a $1,000 opening balance, a
  * 5% charge on negative balances, net worth as the score — but this game has
  * never had a balance and scores on mark-to-market P/L, so options score the
@@ -20,6 +25,10 @@
  * stock fill's is (mark − price) × qty. The spec's leverage-and-interest
  * mechanic goes with the cash it was built on.
  */
+
+// Fisher-Yates, borrowed from the stock engine rather than reimplemented — the
+// sampling in §4 is the same shuffle-then-take the deal already uses.
+import { shuffle } from './engine.js';
 
 /**
  * Everything the spec leaves open, named and defaulted rather than decided in
@@ -34,6 +43,13 @@ export const OPTION_DEFAULTS = {
   otmOrdersPerSide: 1,
   marketOrderMin: 1,
   marketOrderMax: 10,
+
+  // Whether the house auctions a sample of the board or all of it. 'sampled' is
+  // §4: two ATM orders plus X OTM per side, so where the orders land is itself
+  // information. 'all' puts a house order on every listed contract — closer to a
+  // round-robin where the house stands ready in everything — at the cost of that
+  // signal and of 18 orders per table instead of 6.
+  orderCoverage: 'sampled',
 
   // §3 — the fixed-expiry tables that sit alongside the current round's table.
   fixedExpiries: [3, 5],
@@ -163,6 +179,82 @@ export function makeQuote({ playerId, expiry, kind, strike, bidPx, bidQty, askPx
 export const contractKey = (o) => `${o.expiry}|${o.kind}|${o.strike}`;
 export const contractLabel = (o) =>
   `${o.kind === 'call' ? 'Call' : 'Put'} $${o.strike} exp R${o.expiry}`;
+
+// ---------------------------------------------------------------------------
+// Order generation — §4
+// ---------------------------------------------------------------------------
+
+/**
+ * INDICATE — place this round's house orders, side and size withheld.
+ *
+ * Per table: the ATM call and ATM put always get an order, plus X out-of-the-
+ * money strikes each side, sampled without replacement by Fisher-Yates. So a
+ * table gets 2 + 2X orders.
+ *
+ * The spec says "with X=1 there are 6 orders per expiry table, 18 per round",
+ * but 2 + 2X is 4 at X=1, not 6 — six needs X=2. The formula is the structural
+ * claim and the count is a derived aside, so the formula wins: X=1 gives 4 per
+ * table and 12 per round across three tables. Setting otmOrdersPerSide to 2
+ * reproduces the spec's stated 6 and 18 exactly.
+ *
+ * OTM means what it means: calls above the money, puts below. The spec words
+ * this as "the 4 rows above ATM" for calls, but its own grid puts the lowest
+ * strike in row 1 and increases downward, so the rows above ATM hold the strikes
+ * below it — which would make those calls in-the-money. Taking the financial
+ * label over the row geometry; flagged rather than silently reconciled.
+ *
+ * Nothing here decides side or size. That is the point: at indicate time those
+ * values do not exist yet, so there is nothing to conceal and nothing that can
+ * leak. Players see where the orders landed, which is information in itself.
+ */
+export function indicateOrders(round, maxRounds, anchor, cfg = OPTION_DEFAULTS, rng = Math.random) {
+  const depth = cfg.strikeDepth ?? OPTION_DEFAULTS.strikeDepth;
+  const grid = strikeGrid(anchor, cfg);
+  const atm = grid[depth];
+  const above = grid.slice(depth + 1);   // OTM calls
+  const below = grid.slice(0, depth);    // OTM puts
+  const x = Math.min(cfg.otmOrdersPerSide ?? OPTION_DEFAULTS.otmOrdersPerSide, depth);
+  const all = (cfg.orderCoverage ?? OPTION_DEFAULTS.orderCoverage) === 'all';
+
+  const orders = [];
+  for (const { expiry } of expiryTables(round, maxRounds, cfg)) {
+    const at = (kind, strike) => orders.push(makeMarketOrder({ expiry, kind, strike }));
+    if (all) {
+      for (const strike of grid) { at('call', strike); at('put', strike); }
+      continue;
+    }
+    at('call', atm);
+    at('put', atm);
+    for (const strike of shuffle(above, rng).slice(0, x)) at('call', strike);
+    for (const strike of shuffle(below, rng).slice(0, x)) at('put', strike);
+  }
+  return orders;
+}
+
+/**
+ * REVEAL — fill in side and size for every order still showing a placeholder.
+ *
+ * Deliberately stateless: this scans the board it is handed for orders with no
+ * side or size, exactly as the prototype scanned for `?`, rather than replaying
+ * anything recorded during indicate. A game master who hand-adds a row gets it
+ * revealed; one who hand-fills a row keeps what they typed. Do not "improve"
+ * this into something that reads stored indicate state.
+ *
+ * Side is a coin flip, size is uniform over the configured range, and no price
+ * is generated here or anywhere else.
+ */
+export function revealOrders(orders, cfg = OPTION_DEFAULTS, rng = Math.random) {
+  const min = cfg.marketOrderMin ?? OPTION_DEFAULTS.marketOrderMin;
+  const max = cfg.marketOrderMax ?? OPTION_DEFAULTS.marketOrderMax;
+  let revealed = 0;
+  for (const o of orders) {
+    if (!isIndicated(o)) continue;
+    o.side = rng() < 0.5 ? 'BUY' : 'SELL';
+    o.qty = min + Math.floor(rng() * (max - min + 1));
+    revealed++;
+  }
+  return revealed;
+}
 
 // ---------------------------------------------------------------------------
 // Accounting

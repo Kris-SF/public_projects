@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import {
   OPTION_DEFAULTS, strikeGrid, isTradeable, expiryTables,
   makePosition, makeMarketOrder, makeQuote, isIndicated,
+  indicateOrders, revealOrders,
   rollupPositions, grossOptionInventory, intrinsic, settleExpiring,
   optionPL, contractKey,
 } from './options.js';
@@ -118,6 +119,124 @@ test('an unknown option kind is refused at every entry point', () => {
   for (const fn of [makePosition, makeMarketOrder, makeQuote]) {
     assert.throws(() => fn({ kind: 'straddle', strike: 100, expiry: 3 }), /Unknown option kind/);
   }
+});
+
+// --- §4 order generation ----------------------------------------------------
+
+/** Deterministic rng so a sampled board can be asserted exactly. */
+const seeded = (seed) => () => {
+  seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+  return seed / 0x7fffffff;
+};
+
+const countFor = (orders, expiry) => orders.filter((o) => o.expiry === expiry).length;
+
+test('a table gets 2 + 2X orders, so four at the default X=1', () => {
+  const orders = indicateOrders(1, 5, 100, OPTION_DEFAULTS, seeded(7));
+  assert.equal(orders.length, 12, 'three tables');
+  for (const expiry of [1, 3, 5]) assert.equal(countFor(orders, expiry), 4);
+});
+
+test("X=2 reproduces the spec's stated six per table and eighteen per round", () => {
+  // The spec claims 6 and 18 at X=1, but its own formula (ATM pair + X each
+  // side) only reaches six at X=2. Pinned here so the discrepancy stays visible.
+  const cfg = { ...OPTION_DEFAULTS, otmOrdersPerSide: 2 };
+  const orders = indicateOrders(1, 5, 100, cfg, seeded(7));
+  assert.equal(orders.length, 18);
+  for (const expiry of [1, 3, 5]) assert.equal(countFor(orders, expiry), 6);
+});
+
+test('the ATM call and put always get an order', () => {
+  for (let s = 1; s <= 25; s++) {
+    const orders = indicateOrders(1, 5, 100, OPTION_DEFAULTS, seeded(s));
+    const atm = orders.filter((o) => o.expiry === 3 && o.strike === 100);
+    assert.deepEqual(atm.map((o) => o.kind).sort(), ['call', 'put'], `seed ${s}`);
+  }
+});
+
+test('OTM means OTM — calls above the money, puts below', () => {
+  for (let s = 1; s <= 25; s++) {
+    for (const o of indicateOrders(1, 5, 100, OPTION_DEFAULTS, seeded(s))) {
+      if (o.strike === 100) continue;
+      if (o.kind === 'call') assert.ok(o.strike > 100, `call struck ${o.strike} is not OTM`);
+      else assert.ok(o.strike < 100, `put struck ${o.strike} is not OTM`);
+    }
+  }
+});
+
+test('OTM strikes are sampled without replacement', () => {
+  const cfg = { ...OPTION_DEFAULTS, otmOrdersPerSide: 4 };
+  const orders = indicateOrders(1, 5, 100, cfg, seeded(11));
+  assert.equal(countFor(orders, 3), 10, 'ATM pair plus four each side');
+
+  const calls = orders.filter((o) => o.expiry === 3 && o.kind === 'call').map((o) => o.strike);
+  assert.equal(new Set(calls).size, calls.length, 'no strike drawn twice');
+  assert.deepEqual(calls.slice().sort((a, b) => a - b), [100, 105, 110, 115, 120]);
+});
+
+test('X can never exceed the number of OTM strikes that exist', () => {
+  const cfg = { ...OPTION_DEFAULTS, otmOrdersPerSide: 99 };
+  const orders = indicateOrders(1, 5, 100, cfg, seeded(3));
+  assert.equal(countFor(orders, 3), 10, 'clamped to the four strikes per side');
+});
+
+test('indicate withholds side and size by not generating them', () => {
+  const orders = indicateOrders(1, 5, 100, OPTION_DEFAULTS, seeded(5));
+  assert.ok(orders.every(isIndicated));
+  // The strongest form of hiding: there is nothing in the payload to redact.
+  const wire = JSON.stringify(orders);
+  assert.equal(wire.includes('"side":null'), true);
+  assert.equal(/"qty":\s*[0-9]/.test(wire), false, 'no size exists yet');
+  assert.equal(wire.includes('price'), false, 'and no price, ever');
+});
+
+test('reveal fills every placeholder with a side and a legal size', () => {
+  const orders = indicateOrders(1, 5, 100, OPTION_DEFAULTS, seeded(9));
+  const n = revealOrders(orders, OPTION_DEFAULTS, seeded(21));
+
+  assert.equal(n, 12);
+  assert.equal(orders.some(isIndicated), false);
+  for (const o of orders) {
+    assert.ok(['BUY', 'SELL'].includes(o.side));
+    assert.ok(Number.isInteger(o.qty) && o.qty >= 1 && o.qty <= 10, `qty ${o.qty} out of range`);
+    assert.equal('price' in o, false, 'reveal never generates a price');
+  }
+});
+
+test('reveal is stateless — it reads the board, not the indicate step', () => {
+  const orders = indicateOrders(1, 5, 100, OPTION_DEFAULTS, seeded(4));
+  revealOrders(orders, OPTION_DEFAULTS, seeded(2));
+
+  const before = orders.map((o) => `${o.side}${o.qty}`);
+
+  // A game master hand-adds a row after the reveal, and hand-edits another.
+  orders.push(makeMarketOrder({ expiry: 5, kind: 'put', strike: 85 }));
+  orders[0].qty = 7;
+  orders[0].side = 'SELL';
+
+  const n = revealOrders(orders, OPTION_DEFAULTS, seeded(31));
+  assert.equal(n, 1, 'only the new placeholder is filled');
+  assert.equal(orders[0].qty, 7, 'a hand-filled row is left alone');
+  assert.equal(orders[0].side, 'SELL');
+  // Index 0 is the row we just hand-edited, so compare from 1.
+  assert.deepEqual(orders.slice(1, 12).map((o) => `${o.side}${o.qty}`), before.slice(1),
+    'already-revealed orders are never re-rolled');
+  assert.equal(isIndicated(orders[12]), false, 'the added row got revealed');
+});
+
+test('the table set shrinks with the expiries, and so does the order count', () => {
+  const at = (round) => indicateOrders(round, 5, 100, OPTION_DEFAULTS, seeded(13)).length;
+  assert.equal(at(1), 12, 'three tables');
+  assert.equal(at(3), 8, 'two tables');
+  assert.equal(at(5), 4, 'one table');
+});
+
+test('full coverage puts a house order on every listed contract', () => {
+  const cfg = { ...OPTION_DEFAULTS, orderCoverage: 'all' };
+  const orders = indicateOrders(1, 5, 100, cfg, seeded(6));
+  assert.equal(countFor(orders, 3), 18, 'nine strikes, calls and puts');
+  assert.equal(orders.length, 54);
+  assert.ok(orders.every(isIndicated), 'still nothing generated until reveal');
 });
 
 // --- §9 rollup --------------------------------------------------------------
@@ -256,6 +375,25 @@ test('options on adds a private book, and nothing to the public state', () => {
   const pub = JSON.stringify(publicState(g));
   assert.equal(pub.includes('quote'), false);
   assert.equal(pub.includes('optionPosition'), false);
+});
+
+test('the board is indicated at round start and published in full', () => {
+  const g = seatedGame({ options: true });
+  const board = publicState(g).optionBoard;
+
+  assert.equal(board.anchor, 100, 'anchored on the opening mark');
+  assert.deepEqual(board.tables.map((t) => t.expiry), [1, 3, 5]);
+  assert.deepEqual(board.tables[0].strikes, strikeGrid(100));
+  assert.equal(board.orders.length, 12);
+
+  // Publishing the board in full is safe precisely because nothing is decided.
+  assert.ok(board.orders.every(isIndicated));
+  assert.equal(JSON.stringify(board).includes('"qty":null'), true);
+  assert.equal(/"qty":\s*[0-9]/.test(JSON.stringify(board)), false);
+});
+
+test('a stock-only table publishes no board at all', () => {
+  assert.equal(publicState(seatedGame({})).optionBoard, null);
 });
 
 test('rules are configurable, and unspecified ones keep their defaults', () => {
