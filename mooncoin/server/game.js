@@ -19,6 +19,7 @@ import {
   DEFAULTS, deal, emptyHand, matchOrders, cardEffects, regimeEffects,
   resolveDice, position, rollDie,
 } from './engine.js';
+import { OPTION_DEFAULTS, createOptionsState, createPlayerOptions } from './options.js';
 
 export const PHASES = ['lobby', 'orders', 'cards', 'rolling', 'complete'];
 
@@ -38,6 +39,10 @@ export function createGame(code, config = {}) {
       maxRounds: config.maxRounds ?? DEFAULTS.maxRounds,
       cardQty: config.cardQty ?? DEFAULTS.cardQty,
       openingPrice: config.openingPrice ?? DEFAULTS.openingPrice,
+      // The options layer is opt-in at setup, so the stock-only game stays
+      // exactly the game it is today — same flow, same payloads, no cash.
+      options: config.options ?? false,
+      optionRules: { ...OPTION_DEFAULTS, ...(config.optionRules ?? {}) },
     },
     phase: 'lobby',
     round: 0,
@@ -49,6 +54,7 @@ export function createGame(code, config = {}) {
     ready: { orders: {}, cards: {} },
     reveal: null,        // this round's matched book, once the orders gate trips
     net: null,           // this round's trend/magnitude pressure, once cards trip
+    options: null,       // the options layer, when the toggle is on
     history: [],         // one entry per completed round
     log: [],
   };
@@ -103,8 +109,12 @@ export function startGame(game, rng = Math.random) {
     p.hand = { ...hands[i] };
     p.initialHand = { ...hands[i] };
     p.fills = [];
+    // Cash exists only in the options game. The stock-only game scores on
+    // mark-to-market P/L and has never had a balance to spend.
+    if (game.config.options) Object.assign(p, createPlayerOptions(game.config.optionRules));
   });
 
+  game.options = game.config.options ? createOptionsState() : null;
   game.round = 1;
   game.mark = game.config.openingPrice;
   game.phase = 'orders';
@@ -365,11 +375,15 @@ export function resetGame(game) {
   game.mark = game.config.openingPrice;
   game.history = [];
   game.log = [];
+  game.options = null;
   clearRound(game);
   for (const p of game.players) {
     p.hand = emptyHand();
     p.initialHand = emptyHand();
     p.fills = [];
+    delete p.cash;
+    delete p.optionPositions;
+    delete p.optionLog;
   }
   logLine(game, 'Game reset to lobby');
 }
@@ -380,6 +394,8 @@ export function updateConfig(game, patch) {
   next.maxRounds = clampInt(next.maxRounds, 1, 10);
   next.cardQty = clampInt(next.cardQty, 0, 25);
   next.openingPrice = clampInt(next.openingPrice, 1, 10000);
+  next.options = !!next.options;
+  next.optionRules = { ...OPTION_DEFAULTS, ...(next.optionRules ?? {}) };
   if (game.players.length * next.cardQty > 100) {
     throw new Error(`${game.players.length} players x ${next.cardQty} cards exceeds the 100-card deck`);
   }
@@ -433,6 +449,9 @@ export function publicState(game) {
     cardQty: game.config.cardQty,
     mark: game.mark,
     openingPrice: game.config.openingPrice,
+    // Whether this table is playing the options game at all. The board itself
+    // arrives in stage 2; for now this is the only thing the UI needs to know.
+    options: game.config.options,
     standings: standings(game),
     history: game.history,
     reveal: game.phase === 'orders' ? null : game.reveal,
@@ -466,6 +485,14 @@ export function privateState(game, playerId) {
       pendingCards: game.pendingCards[p.id] ?? null,
       ordersReady: !!game.ready.orders[p.id],
       cardsReady: !!game.ready.cards[p.id],
+      // Options are private by construction: a player's cash, book and quotes
+      // are theirs alone, and none of it appears in publicState.
+      ...(game.config.options ? {
+        cash: p.cash,
+        optionPositions: p.optionPositions ?? [],
+        optionLog: p.optionLog ?? [],
+        quotes: game.options?.quotes[p.id] ?? [],
+      } : {}),
     },
   };
 }
