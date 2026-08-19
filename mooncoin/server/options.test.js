@@ -773,6 +773,27 @@ test('the host can force an auction gate', () => {
   assert.equal(g.phase, 'orders', 'forced through to the stock');
 });
 
+test('a forced gate does not clear quotes nobody confirmed', () => {
+  const g = twoSeats({ expiryCount: 1, orderCoverage: 'all' });
+  const [alice, bob] = g.players;
+  const c = { expiry: 1, kind: 'call', strike: 100 };
+
+  // Both type a market. Only Alice commits to hers.
+  submitQuotes(g, alice.id, [{ ...c, askPx: 5, askQty: 10 }]);
+  submitQuotes(g, bob.id, [{ ...c, bidPx: 25, bidQty: 10 }]);
+  confirmQuotes(g, alice.id);
+
+  forceGate(g);
+
+  // Bob typed a 25 bid and never stood behind it, so it cannot have traded —
+  // and Alice cannot have been filled at a price only Bob's uncommitted quote
+  // could have set.
+  assert.deepEqual(bob.optionPositions, [], 'an unconfirmed quote does not trade');
+  for (const pos of alice.optionPositions) {
+    assert.equal(pos.premium === 25, false, "Bob's uncommitted bid never set a price");
+  }
+});
+
 // --- settlement at expiry ---------------------------------------------------
 
 /** Drive a round to its end with forced dice, so the mark is known exactly. */

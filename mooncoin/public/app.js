@@ -1618,7 +1618,10 @@ function renderDashboard(hostMode = false) {
                   ${st.seated < 1 ? 'Waiting for players' : `Open the market (${st.seated} seated)`}
                 </button>` : ''}
               ${st.phase === 'orders' || st.phase === 'cards' ? `
-                <button class="wide" id="force">Force the ${st.phase} gate${gate.length ? ` — skips ${esc(gate.join(', '))}` : ''}</button>` : ''}
+                <button class="wide" id="force">Close the ${st.phase === 'auction' ? 'auction' : st.phase} gate now</button>
+                <p class="n-note">${gate.length
+                  ? `${esc(gate.join(', '))} ${gate.length === 1 ? 'has' : 'have'} not confirmed and will sit this one out — ${st.phase === 'orders' ? 'no trade' : st.phase === 'cards' ? 'cards stay in hand' : 'quotes do not clear'}.`
+                  : 'Everyone is in; the gate is about to trip on its own.'}</p>` : ''}
               ${st.phase === 'rolling' ? `
                 <button class="primary n-go" id="roll" ${ui.rolling ? 'disabled' : ''}>
                   ${ui.rolling ? 'Rolling…' : `Roll ${st.dieLabel ?? ''} (${st.rollStep + 1}/4)`}

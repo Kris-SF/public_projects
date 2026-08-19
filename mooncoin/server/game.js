@@ -353,7 +353,12 @@ export function tripAuctionGate(game) {
   const live = game.options.orders.filter((o) => o.expiry === expiry);
   revealOrders(live, cfg);
 
-  const quotes = Object.values(game.options.quotes).flat();
+  // Only confirmed quotes clear, the same rule the orders gate uses. Typing a
+  // market is not committing to it, so a forced gate leaves the undecided out
+  // rather than trading prices they never stood behind.
+  const quotes = game.players
+    .filter((p) => game.options.ready[p.id])
+    .flatMap((p) => game.options.quotes[p.id] ?? []);
   const rank = new Map(game.players.map((p) => [p.id, position(p.fills, game.mark).pl]));
 
   const results = [];
