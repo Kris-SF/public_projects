@@ -1,5 +1,5 @@
 /* ===========================================================================
-   MOONCOIN
+   MARKET MAKER — by Moontower
    Moontower indigo, sharpened. The palette is unchanged from the terminal
    build — same accent, same reserved maroon, same semantic green and red — but
    the surface it sits on now has depth. Three real levels: the page, the panel,
@@ -171,21 +171,26 @@ a { color: var(--accent-bright); }
 .topbar .chip.off  { background: rgba(255, 94, 91, 0.14); color: var(--down); }
 .topbar .phase { text-transform: uppercase; letter-spacing: 0.1em; font-size: 11px; }
 
-/* The brand, and only the brand. */
+/* The brand, and only the brand. The game is title case because it is a proper
+   name; the house is lowercase because that is how moontower sets itself. */
 .topbar .brand {
   font-family: var(--disp);
   font-weight: 600;
   font-size: 16px;
   letter-spacing: -0.01em;
   color: #fff;
-  text-transform: lowercase;
+}
+.topbar .by {
+  font-family: var(--mono);
+  font-size: 10px; letter-spacing: 0.1em;
+  color: var(--faint); margin-left: -4px;
 }
 
 /* On a phone the bar is the wordmark, the table and the connection — the phase
    is already spelled out by the instruction bar underneath it. */
 @media (max-width: 520px) {
   .topbar { gap: 9px; padding: 11px 13px; }
-  .topbar .phase { display: none; }
+  .topbar .phase, .topbar .by { display: none; }
 }
 
 /* --- Layout -------------------------------------------------------------- */
@@ -403,13 +408,16 @@ label.field > span {
 .brand { text-align: center; margin-bottom: 30px; }
 .brand .logo {
   font-family: var(--disp);
-  font-size: 40px; font-weight: 300; letter-spacing: -0.03em;
-  text-transform: lowercase; color: #fff;
+  font-size: 40px; font-weight: 300; letter-spacing: -0.03em; color: #fff;
+}
+.brand .by {
+  font-family: var(--mono);
+  font-size: 12px; letter-spacing: 0.18em; color: var(--accent-dim); margin-top: 4px;
 }
 .brand .sub {
   font-family: var(--mono);
   font-size: 11px; letter-spacing: 0.24em; color: var(--faint);
-  margin-top: 6px; text-transform: uppercase;
+  margin-top: 10px; text-transform: uppercase;
 }
 .brand .rule { border-top: 1px solid var(--rule); margin-top: 18px; }
 

@@ -1,6 +1,10 @@
-# Mooncoin Terminal
+# Market Maker
 
-A web port of the Mooncoin spreadsheet game. Every player gets a private screen
+*by Moontower.* A multiplayer market-making game. Players quote two-sided
+markets into unknown order flow, trade a fictional stock called Mooncoin, and
+learn what immediacy costs by paying for it.
+
+Every player gets a private screen
 on their own phone; the shared dashboard goes on the big screen; the host drives
 the round from a third.
 
@@ -12,7 +16,7 @@ under [Changes from the spreadsheet](#changes-from-the-spreadsheet).
 
 ```bash
 npm start            # http://localhost:3000 — no dependencies to install
-npm test             # 66 tests: engine, state machine, and a full game over HTTP
+npm test             # engine, state machine, the option auction, a full game over HTTP
 ```
 
 Set `PORT` to move it. Locally, games live in the server process; see
@@ -33,20 +37,26 @@ the same seat with the same hand and blotter.
 
 ## How a round works
 
-Two gates per round, matching the two ready-columns the sheet tracked. Each trips
-automatically when every seated player has confirmed; the host can force either
-one when somebody wanders off.
+Each gate trips automatically when every seated player has confirmed; the host
+can force any of them when somebody wanders off.
 
-1. **Orders** — everyone submits a signed quantity and an order type, then
+1. **Auction** *(options games only)* — one gate per live expiry, in round order.
+   Everyone quotes the contracts on the board or passes. The gate reveals that
+   expiry's house orders and clears every contract.
+2. **Orders** — everyone submits a signed quantity and an order type, then
    confirms. The gate reveals the book, prints the round, and writes every
    blotter.
-2. **Cards** — everyone plays cards and confirms. The gate reveals them and
+3. **Cards** — everyone plays cards and confirms. The gate reveals them and
    computes the pressure on the dice.
-3. **Rolling** — four dice, locked one at a time. The fourth settles the round
+4. **Rolling** — four dice, locked one at a time. The fourth settles the round
    and moves the mark.
 
-Orders and cards stay sealed until their gate trips. Who has confirmed is public;
-what they confirmed is not.
+Options trade *before* stock on purpose: somebody hung with a short call can buy
+the underlying against it in the same round. Running stock first would push every
+hedge a round late, to after the dice had settled the thing being hedged.
+
+Quotes, orders and cards stay sealed until their gate trips. Who has confirmed is
+public; what they confirmed is not.
 
 ## The market
 
@@ -135,10 +145,27 @@ Four things in the sheet were broken or unbuilt rather than intended:
    and silently short-handed later players once the hundred-card deck ran dry.
    Only seated players are dealt now, and an oversubscribed deck is a hard error.
 
-Options were scaffolded in the sheet — `CALL`/`PUT` dropdowns, an `option_tickets`
-range, named ranges for ATM and expiry — but never built. They are out of scope
-here. Positions are keyed per fill rather than assuming a single instrument, so
-adding them later is an extension, not a rewrite.
+## Options
+
+Off by default; the host turns them on in the lobby and picks which rounds carry
+an expiry. The game never quotes an option price — there is no model, no lookup,
+no fair value anywhere in the code. Every price comes out of the auction.
+
+Each live expiry shows nine strikes at $5 spacing, re-anchored to the current
+mark every round. **The grid floats but a position locks**: a $100 call bought at
+a $100 anchor is still a $100 call after the mark has moved to $112 and $100 has
+fallen off the board, and it settles against $100.
+
+The house writes market orders into the board. Some telegraph their side up
+front, the rest stay a question mark; size is always hidden until the gate. The
+market order takes the best price on the side it needs and that becomes the
+clearing price — walking the book if it wants more size than is shown, each
+further level at its own limit. Whatever crossing interest is left then trades
+among the players, all of it printing at the clearing price. A contract nobody
+quoted does not trade: no fill, no print, no bot.
+
+Contracts settle at intrinsic against the **mark** at the end of the round they
+expire in — the dice price, not the print.
 
 ## Layout
 
@@ -146,7 +173,8 @@ adding them later is an extension, not a rewrite.
 api/
   game.js        Vercel serverless entry — thin adapter over the handler
 server/
-  engine.js      pricing and position math, no state, no I/O
+  engine.js      stock pricing and position math, no state, no I/O
+  options.js     strike grid, order generation, the auction, option accounting
   game.js        state machine: phases, gates, dealing, settlement
   handler.js     the API, transport-agnostic
   store.js       Redis over the Upstash REST API, memory when unconfigured
@@ -154,7 +182,8 @@ server/
 public/
   index.html     shell
   app.js         all three surfaces, polling transport
-  style.css      amber-on-black terminal styling
+  style.css      Moontower indigo on near-black
+  fonts/         Inter, JetBrains Mono and Lexend, self-hosted variable woff2
 ```
 
 Zero runtime dependencies. `engine.js` is pure — no state, no I/O — so it can be
@@ -182,7 +211,7 @@ preview URL.
 share no memory, so game state has to live somewhere both requests can reach:
 
 1. Vercel dashboard → **Storage** → **Upstash for Redis** → create and connect it
-   to the Mooncoin project
+   to the Market Maker project
 2. Redeploy
 
 That injects `KV_REST_API_URL` and `KV_REST_API_TOKEN`, which the store picks up

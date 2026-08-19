@@ -1,5 +1,5 @@
 /* ===========================================================================
-   MOONCOIN TERMINAL — client
+   MARKET MAKER — client
    Three surfaces off one socket: player, dashboard, host.
    No framework, no build. State arrives, the screen is redrawn.
    =========================================================================== */
@@ -377,7 +377,7 @@ function topbar(extra = '') {
   const round = st && st.round > 0 ? `R${st.round}/${st.maxRounds}` : '';
   return `
     <div class="topbar">
-      <span class="brand">Mooncoin</span>
+      <span class="brand">Market Maker</span><span class="by">by moontower</span>
       ${S.code ? `<span class="chip">${esc(S.code)}</span>` : ''}
       ${round ? `<span>${esc(round)}</span>` : ''}
       <span class="phase">${esc(st ? PHASE_LABEL[st.phase] : '')}</span>
@@ -665,8 +665,8 @@ function renderHome() {
     ${topbar()}
     <div class="home">
       <div class="brand">
-        <div class="logo">MOONCOIN</div>
-        <div class="sub">TERMINAL</div>
+        <div class="logo">Market Maker</div>
+        <div class="by">by moontower</div>
         <div class="rule"></div>
       </div>
       ${alerts()}
@@ -735,8 +735,9 @@ function renderJoin() {
     ${topbar()}
     <div class="home">
       <div class="brand">
-        <div class="logo">MOONCOIN</div>
-        <div class="sub">TABLE ${esc(S.code)}</div>
+        <div class="logo">Market Maker</div>
+        <div class="by">by moontower</div>
+        <div class="sub">Table ${esc(S.code)}</div>
         <div class="rule"></div>
       </div>
       ${alerts()}
@@ -1524,7 +1525,7 @@ function renderDashboard(hostMode = false) {
 
       <div class="n-top">
         <div class="n-mark">
-          <div class="n-lab">Mark</div>
+          <div class="n-lab">Mooncoin mark</div>
           <div class="markcell">
             <div class="m ${ui.markFlash ?? ''}">${st.mark}</div>
             ${sparkline(markPath(st), 132, 46)}
