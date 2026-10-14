@@ -70,7 +70,7 @@ test.after(() => proc?.kill('SIGKILL'));
 test('serves the app shell on a room path', async () => {
   const res = await fetch(`${BASE}/ABCD`);
   assert.equal(res.status, 200);
-  assert.match(await res.text(), /<title>Mooncoin<\/title>/);
+  assert.match(await res.text(), /<title>Market Maker<\/title>/);
 });
 
 test('static assets are served', async () => {

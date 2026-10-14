@@ -1,5 +1,5 @@
 /* ===========================================================================
-   MOONCOIN
+   MARKET MAKER — by Moontower
    Moontower indigo, sharpened. The palette is unchanged from the terminal
    build — same accent, same reserved maroon, same semantic green and red — but
    the surface it sits on now has depth. Three real levels: the page, the panel,
@@ -171,21 +171,26 @@ a { color: var(--accent-bright); }
 .topbar .chip.off  { background: rgba(255, 94, 91, 0.14); color: var(--down); }
 .topbar .phase { text-transform: uppercase; letter-spacing: 0.1em; font-size: 11px; }
 
-/* The brand, and only the brand. */
+/* The brand, and only the brand. The game is title case because it is a proper
+   name; the house is lowercase because that is how moontower sets itself. */
 .topbar .brand {
   font-family: var(--disp);
   font-weight: 600;
   font-size: 16px;
   letter-spacing: -0.01em;
   color: #fff;
-  text-transform: lowercase;
+}
+.topbar .by {
+  font-family: var(--mono);
+  font-size: 10px; letter-spacing: 0.1em;
+  color: var(--faint); margin-left: -4px;
 }
 
 /* On a phone the bar is the wordmark, the table and the connection — the phase
    is already spelled out by the instruction bar underneath it. */
 @media (max-width: 520px) {
   .topbar { gap: 9px; padding: 11px 13px; }
-  .topbar .phase { display: none; }
+  .topbar .phase, .topbar .by { display: none; }
 }
 
 /* --- Layout -------------------------------------------------------------- */
@@ -403,13 +408,16 @@ label.field > span {
 .brand { text-align: center; margin-bottom: 30px; }
 .brand .logo {
   font-family: var(--disp);
-  font-size: 40px; font-weight: 300; letter-spacing: -0.03em;
-  text-transform: lowercase; color: #fff;
+  font-size: 40px; font-weight: 300; letter-spacing: -0.03em; color: #fff;
+}
+.brand .by {
+  font-family: var(--mono);
+  font-size: 12px; letter-spacing: 0.18em; color: var(--accent-dim); margin-top: 4px;
 }
 .brand .sub {
   font-family: var(--mono);
   font-size: 11px; letter-spacing: 0.24em; color: var(--faint);
-  margin-top: 6px; text-transform: uppercase;
+  margin-top: 10px; text-transform: uppercase;
 }
 .brand .rule { border-top: 1px solid var(--rule); margin-top: 18px; }
 
@@ -544,6 +552,12 @@ label.field > span {
 .n-seg button.on { background: var(--accent); color: var(--on-accent); }
 .n-seg button.on.buy  { background: var(--up);   color: #04140A; }
 .n-seg button.on.sell { background: var(--down); color: #1A0605; }
+/* :hover:not(:disabled) out-specifies a bare .on, so hovering the segment you
+   have already chosen used to wash it grey — the selected state disappearing
+   under the cursor that selected it. Restated at hover specificity. */
+.n-seg button.on:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+.n-seg button.on.buy:hover:not(:disabled)  { background: var(--up);   color: #04140A; }
+.n-seg button.on.sell:hover:not(:disabled) { background: var(--down); color: #1A0605; }
 
 .n-qty {
   font-size: 40px; font-weight: 500; text-align: right;
@@ -801,4 +815,190 @@ label.field > span {
 
 @media (max-width: 460px) {
   .n-dice { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ===========================================================================
+   OPTIONS
+   A montage, laid out the way a board is: calls left, the strike spine down the
+   middle, puts right, strikes increasing downward. Every price here was
+   discovered by the auction — a contract it has not priced shows a dash, never
+   a guess.
+   =========================================================================== */
+
+.o-tables { display: grid; gap: 10px; padding: 0 14px; }
+@media (min-width: 900px) { .o-tables { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); } }
+
+.o-table {
+  background: var(--l1);
+  border: 1px solid var(--ring);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+/* The expiry currently on the block is the one thing lit. */
+.o-table.live {
+  background: var(--l2);
+  border-color: rgba(88, 99, 248, 0.42);
+  box-shadow: var(--lift);
+}
+.o-cap {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--accent-dim);
+  border-bottom: 1px solid var(--ring);
+}
+.o-cap .dim { letter-spacing: 0.06em; text-transform: none; color: var(--faint); }
+.o-live {
+  margin-left: auto;
+  background: var(--accent-glow); color: var(--accent-bright);
+  border-radius: 999px; padding: 2px 9px; letter-spacing: 0.06em; text-transform: none;
+}
+
+.o-montage { font-size: 13px; }
+.o-montage th { padding: 6px 10px; font-size: 9px; }
+.o-montage td { padding: 5px 10px; border-top: 1px solid rgba(255, 255, 255, 0.04); }
+.o-montage .o-kinds th {
+  text-align: center; color: var(--faint); letter-spacing: 0.16em;
+  border-bottom: 1px solid var(--ring);
+}
+
+/* The spine: the one column that is not a quote. */
+.o-strike {
+  text-align: center !important;
+  font-family: var(--mono); font-weight: 600;
+  color: var(--white);
+  background: rgba(255, 255, 255, 0.03);
+  border-inline: 1px solid var(--ring);
+}
+.o-montage tr.o-atm td { background: var(--accent-glow); }
+.o-montage tr.o-atm .o-strike { color: var(--accent-bright); }
+
+.o-px { font-family: var(--mono); color: var(--white); }
+.o-side { text-align: center; font-family: var(--mono); font-size: 12px; width: 3.2em; }
+.o-none { color: var(--grey-dark); }
+/* The house has an order here, and will not say which way until the gate shuts. */
+.o-ask { color: var(--accent-bright); font-weight: 600; }
+
+/* --- quoting -------------------------------------------------------------- */
+
+.o-quote {
+  background: var(--l3);
+  border: 1px solid var(--ring);
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+.o-quote-cap {
+  display: flex; align-items: center;
+  font-family: var(--mono); font-size: 12px;
+  margin-bottom: 8px;
+}
+.o-quote-cap .spacer { margin-left: auto; }
+.o-quote-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.o-quote-grid input { font-size: 14px; padding: 8px 9px; text-align: right; border-radius: 8px; }
+.o-quote-grid input::placeholder { font-size: 11px; letter-spacing: 0.06em; }
+
+.o-setup { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); align-items: end; }
+
+/* Sizes read as counts, prices read as money — so they are set differently and
+   coloured differently, and the price carries its own dollar sign. */
+.o-cur { color: var(--faint); margin-right: 1px; font-size: 0.82em; }
+
+.o-quote-grid { align-items: stretch; }
+.o-size {
+  color: var(--white);
+  font-size: 14px; padding: 8px 9px; text-align: right; border-radius: 8px;
+}
+.o-money {
+  display: flex; align-items: center; gap: 1px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--ring);
+  border-radius: 8px;
+  padding-left: 8px;
+}
+.o-money:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(88, 99, 248, 0.22); }
+.o-money .o-cur { font-size: 13px; }
+.o-money input {
+  background: none; border: none; box-shadow: none;
+  padding: 8px 8px 8px 2px; font-size: 14px; text-align: right;
+}
+.o-money input:focus { box-shadow: none; }
+.o-money.bid, .o-money.bid .o-cur, .o-money.bid input { color: var(--up); }
+.o-money.ask, .o-money.ask .o-cur, .o-money.ask input { color: var(--down); }
+.o-money.bid { border-color: rgba(53, 208, 127, 0.3); }
+.o-money.ask { border-color: rgba(255, 94, 91, 0.3); }
+
+/* Named once at the top of the block, not repeated under every contract. */
+.o-quote-legend {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px;
+  margin: 0 0 8px;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--faint); text-align: center;
+}
+
+/* --- naming a contract, and flagging the house's side --------------------- */
+
+/* Two different jobs, so two different registers. The name is a label and stays
+   quiet; the side is live state and shouts. Sharing the palette is fine once
+   the weight tells them apart. */
+.o-kind {
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 5px;
+}
+.o-kind.call { background: rgba(53, 208, 127, 0.15); color: var(--up); }
+.o-kind.put  { background: rgba(255, 94, 91, 0.15); color: var(--down); }
+
+.o-name {
+  font-family: var(--mono); font-size: 14px; font-weight: 500;
+  letter-spacing: -0.028em; color: var(--white); margin-left: 7px;
+}
+.o-exp {
+  font-family: var(--mono); font-size: 11px; color: var(--faint); margin-left: 6px;
+}
+
+.o-flag {
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+}
+.o-flag.buy     { background: var(--up);   color: #04140A; }
+.o-flag.sell    { background: var(--down); color: #1A0605; }
+.o-flag.unknown { background: var(--accent-glow); color: var(--accent-bright); }
+
+.o-contract { white-space: nowrap; }
+.o-contract.spent { opacity: 0.6; }
+
+.o-setup { grid-template-columns: 1fr auto; align-items: end; }
+.o-toggle { margin: 6px 0 0; min-width: 210px; }
+
+/* --- setup: which rounds carry an expiry ---------------------------------- */
+
+.o-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 7px 0 0; }
+.o-chip {
+  font-family: var(--mono);
+  font-size: 13px; letter-spacing: 0.04em;
+  padding: 7px 14px; border-radius: 999px;
+  background: transparent; color: var(--grey);
+  border: 1px solid var(--ring-hi);
+}
+.o-chip:hover:not(:disabled) { background: var(--l3); color: var(--white); }
+.o-chip.on,
+.o-chip.on:hover:not(:disabled) {
+  background: var(--accent); color: var(--on-accent); border-color: var(--accent);
+}
+
+/* What each round will actually auction — the cost of a pick, before the table
+   discovers it the hard way. */
+.o-plan { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); }
+.o-gates { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.o-gate {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  min-width: 34px; padding: 5px 6px;
+  border-radius: 8px; background: var(--l2); border: 1px solid var(--ring);
+  font-family: var(--mono); font-size: 14px; font-weight: 500; color: var(--white);
+}
+.o-gate i {
+  font-style: normal; font-size: 9px; letter-spacing: 0.1em; color: var(--faint);
 }

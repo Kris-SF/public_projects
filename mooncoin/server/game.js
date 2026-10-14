@@ -4,6 +4,9 @@
  * A round runs through two gates, mirroring the two ready-columns the
  * spreadsheet tracked:
  *
+ *   auction -> options only: one gate per expiry, in round order. Everyone
+ *              quotes the strikes they want or passes
+ *              (gate) reveal that expiry's house orders, clear every contract
  *   orders  -> everyone submits qty + LIMIT/MARKET and confirms
  *              (gate) reveal the book, print the fill, write every blotter
  *   cards   -> everyone plays cards and confirms
@@ -19,8 +22,13 @@ import {
   DEFAULTS, deal, emptyHand, matchOrders, cardEffects, regimeEffects,
   resolveDice, position, rollDie,
 } from './engine.js';
+import {
+  OPTION_DEFAULTS, createOptionsState, createPlayerOptions, indicateOrders,
+  expiryTables, strikeGrid, revealOrders, clearContract, makeQuote, makePosition,
+  contractKey, optionPL, settleExpiring, intrinsic, fixedExpiriesFor,
+} from './options.js';
 
-export const PHASES = ['lobby', 'orders', 'cards', 'rolling', 'complete'];
+export const PHASES = ['lobby', 'auction', 'orders', 'cards', 'rolling', 'complete'];
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1
 
@@ -38,6 +46,10 @@ export function createGame(code, config = {}) {
       maxRounds: config.maxRounds ?? DEFAULTS.maxRounds,
       cardQty: config.cardQty ?? DEFAULTS.cardQty,
       openingPrice: config.openingPrice ?? DEFAULTS.openingPrice,
+      // The options layer is opt-in at setup, so the stock-only game stays
+      // exactly the game it is today — same flow, same payloads, no cash.
+      options: config.options ?? false,
+      optionRules: { ...OPTION_DEFAULTS, ...(config.optionRules ?? {}) },
     },
     phase: 'lobby',
     round: 0,
@@ -49,6 +61,7 @@ export function createGame(code, config = {}) {
     ready: { orders: {}, cards: {} },
     reveal: null,        // this round's matched book, once the orders gate trips
     net: null,           // this round's trend/magnitude pressure, once cards trip
+    options: null,       // the options layer, when the toggle is on
     history: [],         // one entry per completed round
     log: [],
   };
@@ -103,24 +116,61 @@ export function startGame(game, rng = Math.random) {
     p.hand = { ...hands[i] };
     p.initialHand = { ...hands[i] };
     p.fills = [];
+    if (game.config.options) Object.assign(p, createPlayerOptions());
   });
 
+  game.options = game.config.options ? createOptionsState() : null;
   game.round = 1;
   game.mark = game.config.openingPrice;
-  game.phase = 'orders';
   game.history = [];
-  clearRound(game);
+  clearRound(game, rng);
+  beginRound(game);
   logLine(game, `Game opened at ${game.config.openingPrice} — ${game.config.maxRounds} rounds, ${game.config.cardQty} cards each`);
   return game;
 }
 
-function clearRound(game) {
+function clearRound(game, rng = Math.random) {
   game.pendingOrders = {};
   game.pendingCards = {};
   game.ready = { orders: {}, cards: {} };
   game.reveal = null;
   game.net = null;
   game.dice = [null, null, null, null];
+
+  // Indicate the new round's house orders. Side and size are not decided here —
+  // they are generated at reveal, which is stage 3's job.
+  if (game.options) {
+    game.options.orders = indicateOrders(
+      game.round, game.config.maxRounds, game.mark, game.config.optionRules, rng,
+    );
+    game.options.quotes = {};
+    game.options.ready = {};
+    game.options.cleared = [];
+    game.options.activeExpiry = null;
+    game.options.tableIndex = 0;
+  }
+}
+
+/**
+ * Open a round on its first gate.
+ *
+ * Options trade before stock, deliberately. It means somebody who has just been
+ * hung with a short call can go and buy the underlying against it in the same
+ * round — the delta hedge is the whole reason the two legs sit in one game, and
+ * running stock first would push every hedge a round late, after the dice have
+ * already settled the thing you were hedging.
+ *
+ * It also puts the harder decision first, while attention is fresh, and leaves
+ * the stock order knowing who got filled with what — which is a read worth
+ * having rather than a leak.
+ */
+function beginRound(game) {
+  if (game.options) {
+    game.phase = 'auction';
+    openAuction(game, 0);
+  } else {
+    game.phase = 'orders';
+  }
 }
 
 function logLine(game, text) {
@@ -196,9 +246,189 @@ export function tripOrdersGate(game) {
       filled: result.fills.find((f) => f.playerId === o.playerId)?.qty ?? 0,
     })),
   };
-  game.phase = 'cards';
   logLine(game, `Round ${game.round} printed ${result.price} on imbalance ${result.imbalance >= 0 ? '+' : ''}${result.imbalance}`);
+  game.phase = 'cards';
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Auction phase — one gate per expiry
+// ---------------------------------------------------------------------------
+
+/**
+ * Open the nth expiry for quoting, in round order — front month first.
+ *
+ * The board already shows which strikes carry a house order; what it does not
+ * show is which way or how big, because those have not been generated yet. So
+ * players quote into a `?` and are making a market rather than filling a known
+ * order, which is the whole point of the exercise.
+ */
+function openAuction(game, index) {
+  const tables = expiryTables(game.round, game.config.maxRounds, game.config.optionRules);
+  if (index >= tables.length) {
+    game.options.activeExpiry = null;
+    game.phase = 'orders';
+    logLine(game, 'Auction closed — the stock is open');
+    return;
+  }
+  game.options.tableIndex = index;
+  game.options.activeExpiry = tables[index].expiry;
+  game.options.quotes = {};
+  game.options.ready = {};
+  logLine(game, `Auction open — expiry R${tables[index].expiry}`);
+}
+
+/** Replace this player's quotes for the expiry on the block. Empty means pass. */
+export function submitQuotes(game, playerId, quotes = []) {
+  if (game.phase !== 'auction') throw new Error('No auction is open');
+  if (game.options.ready[playerId]) throw new Error('Quotes already confirmed');
+
+  const expiry = game.options.activeExpiry;
+  const strikes = strikeGrid(game.mark, game.config.optionRules);
+
+  const clean = (Array.isArray(quotes) ? quotes : []).map((q) => {
+    if (q.expiry !== expiry) throw new Error(`Quote is for R${q.expiry}, not R${expiry}`);
+    if (!strikes.includes(q.strike)) throw new Error(`$${q.strike} is not on the board`);
+    const num = (v, what) => {
+      if (v === null || v === undefined || v === '') return null;
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0) throw new Error(`${what} must be a number, or blank`);
+      return n;
+    };
+    const q2 = makeQuote({
+      playerId, expiry, kind: q.kind, strike: q.strike, round: game.round,
+      bidPx: num(q.bidPx, 'Bid'), bidQty: Math.trunc(Number(q.bidQty) || 0),
+      askPx: num(q.askPx, 'Ask'), askQty: Math.trunc(Number(q.askQty) || 0),
+    });
+    // A quote with a price but no size is an intention, not an order.
+    if (q2.bidPx !== null && q2.bidQty < 1) throw new Error('A bid needs a size');
+    if (q2.askPx !== null && q2.askQty < 1) throw new Error('An offer needs a size');
+    if (q2.bidPx !== null && q2.askPx !== null && q2.bidPx > q2.askPx) {
+      throw new Error('Your bid is above your offer');
+    }
+    return q2;
+  });
+
+  game.options.quotes[playerId] = clean;
+  return clean;
+}
+
+export function confirmQuotes(game, playerId) {
+  if (game.phase !== 'auction') throw new Error('No auction is open');
+  if (!game.options.quotes[playerId]) game.options.quotes[playerId] = [];
+  game.options.ready[playerId] = true;
+  const p = playerById(game, playerId);
+  const n = game.options.quotes[playerId].length;
+  logLine(game, `${p.name} ${n ? `quoted ${n} contract${n === 1 ? '' : 's'}` : 'passed'}`);
+  return maybeTripAuctionGate(game);
+}
+
+export function unconfirmQuotes(game, playerId) {
+  if (game.phase !== 'auction') return false;
+  delete game.options.ready[playerId];
+  return true;
+}
+
+export function allQuotesReady(game) {
+  return game.players.length > 0 && game.players.every((p) => game.options.ready[p.id]);
+}
+
+function maybeTripAuctionGate(game, force = false) {
+  if (!force && !allQuotesReady(game)) return false;
+  return tripAuctionGate(game);
+}
+
+/**
+ * Close the gate: reveal this expiry's house orders, then clear every contract.
+ *
+ * Reveal happens here and not a moment earlier, so nobody quotes against a known
+ * side or size. It scans the board for orders still carrying no side and no
+ * size, which keeps the stateless property §4 asks for.
+ */
+export function tripAuctionGate(game) {
+  if (game.phase !== 'auction') throw new Error('No auction is open');
+
+  const cfg = game.config.optionRules;
+  const expiry = game.options.activeExpiry;
+  const live = game.options.orders.filter((o) => o.expiry === expiry);
+  revealOrders(live, cfg);
+
+  // Only confirmed quotes clear, the same rule the orders gate uses. Typing a
+  // market is not committing to it, so a forced gate leaves the undecided out
+  // rather than trading prices they never stood behind.
+  const quotes = game.players
+    .filter((p) => game.options.ready[p.id])
+    .flatMap((p) => game.options.quotes[p.id] ?? []);
+  const rank = new Map(game.players.map((p) => [p.id, position(p.fills, game.mark).pl]));
+
+  const results = [];
+  for (const order of live) {
+    const result = clearContract(order, quotes, { cfg, rank });
+    results.push(result);
+    if (result.price === null) continue;
+
+    game.options.marks[contractKey(result)] = result.price;
+    for (const t of result.trades) {
+      if (t.buyer) writeOption(game, t.buyer, result, t.qty, t.price);
+      if (t.seller) writeOption(game, t.seller, result, -t.qty, t.price);
+    }
+  }
+
+  const traded = results.filter((r) => r.price !== null);
+  game.options.cleared = [...(game.options.cleared ?? []), { expiry, results }];
+  logLine(game, `R${expiry} auction cleared — ${traded.length} of ${results.length} contracts traded`);
+
+  openAuction(game, game.options.tableIndex + 1);
+  return true;
+}
+
+/**
+ * Expire everything struck for this round, against the mark the dice just set.
+ *
+ * The mark, not the print. The print is where the stock traded during the round;
+ * the mark is where it ends up once the dice have resolved, and that is the
+ * number an option struck for this round is a bet on.
+ *
+ * Expired rows come off the blotter, so the P/L they realised has to be kept
+ * somewhere that outlives them — otherwise a player's score would quietly
+ * unwind every time a contract expired.
+ */
+function settleOptions(game) {
+  if (!game.options) return [];
+
+  const settledRows = [];
+  for (const p of game.players) {
+    const { realized, settled, remaining } =
+      settleExpiring(p.optionPositions, game.round, game.mark);
+    if (!settled.length) continue;
+
+    p.realizedOptionPl = (p.realizedOptionPl ?? 0) + realized;
+    p.optionPositions = remaining;
+
+    for (const s of settled) {
+      const mark = intrinsic(s.kind, s.strike, game.mark);
+      game.options.marks[contractKey(s)] = mark;   // the blotter's final mark
+      p.settledOptions.push({
+        round: game.round, kind: s.kind, strike: s.strike, expiry: s.expiry,
+        qty: s.qty, mark, value: s.value,
+      });
+      settledRows.push({ name: p.name, qty: s.qty, kind: s.kind, strike: s.strike, mark });
+    }
+    logLine(game, `${p.name} settled ${settled.length} contract${settled.length === 1 ? '' : 's'} for ${realized >= 0 ? '+' : ''}${realized}`);
+  }
+  return settledRows;
+}
+
+function writeOption(game, playerId, contract, qty, premium) {
+  const p = playerById(game, playerId);
+  p.optionPositions.push(makePosition({
+    playerId, kind: contract.kind, strike: contract.strike, expiry: contract.expiry,
+    qty, premium, round: game.round,
+  }));
+  p.optionLog.push({
+    round: game.round, kind: contract.kind, strike: contract.strike,
+    expiry: contract.expiry, qty, premium,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -331,13 +561,17 @@ function settleRound(game) {
 
   logLine(game, `Round ${game.round} settled ${fmtSigned(chg)} to ${game.mark} (${type})`);
 
+  // Options struck for this round expire against the mark the dice just set.
+  const expired = settleOptions(game);
+  if (expired.length) game.history[game.history.length - 1].expired = expired;
+
   if (game.round >= game.config.maxRounds) {
     game.phase = 'complete';
     logLine(game, `Game over — final mark ${game.mark}`);
   } else {
     game.round += 1;
-    game.phase = 'orders';
     clearRound(game);
+    beginRound(game);
   }
   return { settled: true, trend, type, chg, mark: game.mark };
 }
@@ -352,6 +586,10 @@ export function forceGate(game) {
     logLine(game, 'Host forced the orders gate');
     return maybeTripOrdersGate(game, true);
   }
+  if (game.phase === 'auction') {
+    logLine(game, 'Host forced the auction gate');
+    return maybeTripAuctionGate(game, true);
+  }
   if (game.phase === 'cards') {
     logLine(game, 'Host forced the cards gate');
     return maybeTripCardsGate(game, true);
@@ -365,11 +603,16 @@ export function resetGame(game) {
   game.mark = game.config.openingPrice;
   game.history = [];
   game.log = [];
+  game.options = null;
   clearRound(game);
   for (const p of game.players) {
     p.hand = emptyHand();
     p.initialHand = emptyHand();
     p.fills = [];
+    delete p.optionPositions;
+    delete p.optionLog;
+    delete p.settledOptions;
+    delete p.realizedOptionPl;
   }
   logLine(game, 'Game reset to lobby');
 }
@@ -380,6 +623,19 @@ export function updateConfig(game, patch) {
   next.maxRounds = clampInt(next.maxRounds, 1, 10);
   next.cardQty = clampInt(next.cardQty, 0, 25);
   next.openingPrice = clampInt(next.openingPrice, 1, 10000);
+  next.options = !!next.options;
+  next.optionRules = {
+    ...OPTION_DEFAULTS, ...(game.config.optionRules ?? {}), ...(patch.optionRules ?? {}),
+  };
+  next.optionRules.expiryCount = clampInt(next.optionRules.expiryCount, 1, 3);
+  // An explicit pick survives as an explicit pick, pruned to the game length —
+  // shortening the game must not leave an expiry hanging past the last round.
+  if (Array.isArray(next.optionRules.fixedExpiries)) {
+    next.optionRules.fixedExpiries = [...new Set(next.optionRules.fixedExpiries)]
+      .map((e) => Math.trunc(Number(e)))
+      .filter((e) => Number.isInteger(e) && e >= 1 && e <= next.maxRounds)
+      .sort((a, b) => a - b);
+  }
   if (game.players.length * next.cardQty > 100) {
     throw new Error(`${game.players.length} players x ${next.cardQty} cards exceeds the 100-card deck`);
   }
@@ -404,13 +660,28 @@ export function playerById(game, id) {
   return p;
 }
 
+/**
+ * A player's P/L, stock and options together.
+ *
+ * Options mark against the last price the auction discovered; a contract the
+ * auction has not priced is carried flat rather than at an invented value.
+ */
+function withOptions(game, p) {
+  const stock = position(p.fills, game.mark);
+  if (!game.options) return stock;
+  const marks = new Map(Object.entries(game.options.marks));
+  const open = optionPL(p.optionPositions ?? [], marks);
+  const options = open + (p.realizedOptionPl ?? 0);
+  return { ...stock, stockPl: stock.pl, optionPl: options, pl: stock.pl + options };
+}
+
 export function standings(game) {
   return game.players
     .map((p) => ({
       id: p.id,
       seat: p.seat,
       name: p.name,
-      ...position(p.fills, game.mark),
+      ...withOptions(game, p),
       cardsLeft: p.hand.up + p.hand.down + p.hand.multiply + p.hand.add,
       ordersReady: !!game.ready.orders[p.id],
       cardsReady: !!game.ready.cards[p.id],
@@ -431,8 +702,26 @@ export function publicState(game) {
     round: game.round,
     maxRounds: game.config.maxRounds,
     cardQty: game.config.cardQty,
+    // The effective set, so the lobby shows what is actually selected rather
+    // than what was typed.
+    expiries: fixedExpiriesFor(game.config.maxRounds, game.config.optionRules),
     mark: game.mark,
     openingPrice: game.config.openingPrice,
+    // The options board is public in full. Between indicate and reveal a house
+    // order has no side and no size to leak — those values are not withheld,
+    // they have not been generated yet.
+    options: game.config.options,
+    optionBoard: game.options ? {
+      anchor: game.mark,
+      tables: expiryTables(game.round, game.config.maxRounds, game.config.optionRules)
+        .map((t) => ({ ...t, strikes: strikeGrid(game.mark, game.config.optionRules) })),
+      orders: game.options.orders,
+      marks: game.options.marks,
+      // Only contracts carrying a house order can clear — the auction runs one
+      // order at a time — so this is exactly the set worth quoting.
+      quotable: game.options.activeExpiry === null ? [] :
+        game.options.orders.filter((o) => o.expiry === game.options.activeExpiry),
+    } : null,
     standings: standings(game),
     history: game.history,
     reveal: game.phase === 'orders' ? null : game.reveal,
@@ -444,6 +733,11 @@ export function publicState(game) {
     seated: game.players.length,
     // Counts only — knowing three people have committed is fair game, knowing
     // what they committed is not.
+    auction: game.options?.activeExpiry != null ? {
+      expiry: game.options.activeExpiry,
+      cleared: game.options.cleared ?? [],
+      awaiting: game.players.filter((p) => !game.options.ready?.[p.id]).map((p) => p.name),
+    } : null,
     awaitingOrders: game.players.filter((p) => !game.ready.orders[p.id]).map((p) => p.name),
     awaitingCards: game.players.filter((p) => !game.ready.cards[p.id]).map((p) => p.name),
   };
@@ -461,11 +755,21 @@ export function privateState(game, playerId) {
       hand: p.hand,
       initialHand: p.initialHand,
       fills: p.fills,
-      ...position(p.fills, game.mark),
+      ...withOptions(game, p),
       pendingOrder: game.pendingOrders[p.id] ?? null,
       pendingCards: game.pendingCards[p.id] ?? null,
       ordersReady: !!game.ready.orders[p.id],
       cardsReady: !!game.ready.cards[p.id],
+      // Options are private by construction: a player's book and quotes are
+      // theirs alone, and none of it appears in publicState.
+      ...(game.config.options ? {
+        optionPositions: p.optionPositions ?? [],
+        optionLog: p.optionLog ?? [],
+        settledOptions: p.settledOptions ?? [],
+        realizedOptionPl: p.realizedOptionPl ?? 0,
+        quotes: game.options?.quotes?.[p.id] ?? [],
+        quotesReady: !!game.options?.ready?.[p.id],
+      } : {}),
     },
   };
 }

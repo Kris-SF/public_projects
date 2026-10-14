@@ -1,5 +1,5 @@
 /* ===========================================================================
-   MOONCOIN TERMINAL — client
+   MARKET MAKER — client
    Three surfaces off one socket: player, dashboard, host.
    No framework, no build. State arrives, the screen is redrawn.
    =========================================================================== */
@@ -23,6 +23,7 @@ const ui = {
   qty: '',
   orderType: 'MARKET',
   cards: { up: 0, down: 0, multiply: 0, add: 0 },
+  quotes: {},          // contractKey -> { bidPx, bidQty, askPx, askQty }, being typed
   rolling: false,
   name: '',
   joinCode: '',
@@ -261,6 +262,7 @@ function apply(body) {
   if (ui.lastRound !== null && ui.lastRound !== body.state.round) {
     ui.qty = '';
     ui.cards = { up: 0, down: 0, multiply: 0, add: 0 };
+    ui.quotes = {};
   }
   ui.lastRound = body.state.round;
 
@@ -306,6 +308,36 @@ const act = {
 
   unconfirmCards() { net.send('unconfirmCards'); },
 
+  setQuote(key, field, value) {
+    const q = ui.quotes[key] ?? (ui.quotes[key] = {});
+    q[field] = value.replace(/[^0-9.]/g, '');
+  },
+
+  /** Only send contracts with something on them; blank rows are not orders. */
+  async submitQuotes() {
+    const st = S.state;
+    const quotes = [];
+    for (const [key, q] of Object.entries(ui.quotes)) {
+      const [expiry, kind, strike] = key.split('|');
+      if (Number(expiry) !== st.auction?.expiry) continue;
+      const num = (v) => (v === '' || v === undefined ? null : Number(v));
+      const row = {
+        expiry: Number(expiry), kind, strike: Number(strike),
+        bidPx: num(q.bidPx), bidQty: num(q.bidQty) ?? 0,
+        askPx: num(q.askPx), askQty: num(q.askQty) ?? 0,
+      };
+      if (row.bidPx === null && row.askPx === null) continue;
+      quotes.push(row);
+    }
+    if (await net.send('quotes', { quotes })) await net.send('confirmQuotes');
+  },
+
+  async passQuotes() {
+    if (await net.send('quotes', { quotes: [] })) await net.send('confirmQuotes');
+  },
+
+  unconfirmQuotes() { net.send('unconfirmQuotes'); },
+
   roll() {
     ui.rolling = true;
     render();
@@ -345,7 +377,7 @@ function topbar(extra = '') {
   const round = st && st.round > 0 ? `R${st.round}/${st.maxRounds}` : '';
   return `
     <div class="topbar">
-      <span class="brand">Mooncoin</span>
+      <span class="brand">Market Maker</span><span class="by">by moontower</span>
       ${S.code ? `<span class="chip">${esc(S.code)}</span>` : ''}
       ${round ? `<span>${esc(round)}</span>` : ''}
       <span class="phase">${esc(st ? PHASE_LABEL[st.phase] : '')}</span>
@@ -633,8 +665,8 @@ function renderHome() {
     ${topbar()}
     <div class="home">
       <div class="brand">
-        <div class="logo">MOONCOIN</div>
-        <div class="sub">TERMINAL</div>
+        <div class="logo">Market Maker</div>
+        <div class="by">by moontower</div>
         <div class="rule"></div>
       </div>
       ${alerts()}
@@ -703,8 +735,9 @@ function renderJoin() {
     ${topbar()}
     <div class="home">
       <div class="brand">
-        <div class="logo">MOONCOIN</div>
-        <div class="sub">TABLE ${esc(S.code)}</div>
+        <div class="logo">Market Maker</div>
+        <div class="by">by moontower</div>
+        <div class="sub">Table ${esc(S.code)}</div>
         <div class="rule"></div>
       </div>
       ${alerts()}
@@ -813,7 +846,14 @@ function wirePlayer() {
     b.onclick = () => act.bumpCard(b.dataset.card, Number(b.dataset.delta));
   });
 
+  document.querySelectorAll('[data-q]').forEach((el) => {
+    el.oninput = (e) => act.setQuote(el.dataset.q, el.dataset.f, e.target.value);
+  });
+
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+  on('submitQuotes', act.submitQuotes);
+  on('passQuotes', act.passQuotes);
+  on('unconfirmQuotes', act.unconfirmQuotes);
   on('submitOrder', act.submitOrder);
   on('pass', act.passOrder);
   on('unconfirmOrder', act.unconfirmOrder);
@@ -833,6 +873,22 @@ function wireHost(st, joinUrl) {
     }
     setTimeout(act.start, 60);   // let the config land before the deal
   });
+  on('cfgOptionsOn', () => act.config({ options: true }));
+  on('cfgOptionsOff', () => act.config({ options: false }));
+
+  document.querySelectorAll('[data-expiry]').forEach((b) => {
+    b.onclick = () => {
+      const r = Number(b.dataset.expiry);
+      const now = new Set(st.expiries ?? []);
+      now.has(r) ? now.delete(r) : now.add(r);
+      act.config({ optionRules: { fixedExpiries: [...now] } });
+    };
+  });
+
+  // The chips are drawn from the game length, so it has to commit as it is
+  // typed rather than waiting for the market to open.
+  const rounds = document.getElementById('cfgRounds');
+  if (rounds) rounds.onchange = () => act.config({ maxRounds: Number(rounds.value) });
   on('force', act.force);
   on('roll', act.roll);
   on('reset', act.reset);
@@ -1029,6 +1085,282 @@ function lastRoundReplay(st, me) {
     </div>`;
 }
 
+// ===========================================================================
+// OPTIONS
+//
+// The board never shows what a contract is worth. Every price on screen was
+// discovered by the auction; a contract the auction has not priced shows a dash.
+// ===========================================================================
+
+const optKey = (o) => `${o.expiry}|${o.kind}|${o.strike}`;
+const optLabel = (o) => `${o.kind === 'call' ? 'Call' : 'Put'} $${o.strike} exp R${o.expiry}`;
+
+/**
+ * A contract's name, and the house's side, in deliberately different registers.
+ *
+ * They were both plain green-or-red text on one line, which meant green said
+ * "this is a call" on the left and "the house is buying" on the right — the same
+ * colour carrying two unrelated meanings a few inches apart, so the row read as
+ * one undifferentiated smear. The name is a quiet tinted badge; the side is a
+ * loud filled chip. Same palette, opposite weight, no confusion.
+ */
+const contractTag = (o) => `
+  <span class="o-kind ${o.kind}">${o.kind}</span>
+  <span class="o-name"><span class="o-cur">$</span>${o.strike}</span>
+  <span class="o-exp">R${o.expiry}</span>`;
+
+const houseFlag = (o) => (o.side
+  ? `<span class="o-flag ${o.side === 'BUY' ? 'buy' : 'sell'}">House ${o.side === 'BUY' ? 'buys' : 'sells'}</span>`
+  : '<span class="o-flag unknown">Side hidden</span>');
+
+/**
+ * Order-flow heat.
+ *
+ * One heatmap meaning one thing: which way the house is going and how hard.
+ * Green for a buyer, red for a seller, intensity by size against the biggest
+ * order it can write. An unrevealed order has no size to weigh yet, so it gets
+ * the faintest wash — enough to say "something is here" without implying scale.
+ */
+function heat(order, max) {
+  if (!order) return '';
+  if (order.side === null) return ' style="background:rgba(88,99,248,.10)"';
+  const share = order.qty === null ? 0.18 : 0.10 + 0.42 * Math.min(1, order.qty / max);
+  const rgb = order.side === 'BUY' ? '53,208,127' : '255,94,91';
+  return ` style="background:rgba(${rgb},${share.toFixed(2)})"`;
+}
+
+/** The house's order on a contract: a question mark until its gate closes. */
+function houseCell(order) {
+  if (!order) return '<span class="o-none">·</span>';
+  // Unrevealed: either a plain question mark, or a side the house told you up
+  // front with the size still to come.
+  if (order.qty === null) {
+    return order.side === null
+      ? '<span class="o-ask">?</span>'
+      : `<span class="${order.side === 'BUY' ? 'up' : 'down'}">${order.side === 'BUY' ? 'B' : 'S'}?</span>`;
+  }
+  return `<span class="${order.side === 'BUY' ? 'up' : 'down'}">${order.side === 'BUY' ? 'B' : 'S'}${order.qty}</span>`;
+}
+
+/**
+ * One expiry's montage: calls left, strike spine centre, puts right, strikes
+ * increasing downward — the layout a real board uses.
+ */
+function montage(table, board) {
+  const orderAt = (kind, strike) => board.orders.find(
+    (o) => o.expiry === table.expiry && o.kind === kind && o.strike === strike);
+  const markAt = (kind, strike) => board.marks[`${table.expiry}|${kind}|${strike}`];
+  const maxQty = Math.max(10, ...board.orders.map((o) => o.qty ?? 0));
+
+  const rows = table.strikes.map((strike) => {
+    const atm = strike === board.anchor;
+    const pxCell = (kind) => {
+      const v = markAt(kind, strike);
+      return `<td class="num o-px">${v === undefined
+        ? '<span class="o-none">—</span>'
+        : `<span class="o-cur">$</span>${v}`}</td>`;
+    };
+    const ordCell = (kind) => {
+      const o = orderAt(kind, strike);
+      return `<td class="o-side"${heat(o, maxQty)}>${houseCell(o)}</td>`;
+    };
+    // Mirrored around the spine: the order column outermost, the price against
+    // the strike, so the two sides read outward from the middle.
+    return `
+      <tr class="${atm ? 'o-atm' : ''}">
+        ${ordCell('call')}${pxCell('call')}
+        <td class="o-strike num">${strike}</td>
+        ${pxCell('put')}${ordCell('put')}
+      </tr>`;
+  }).join('');
+
+  return `
+    <table class="o-montage">
+      <thead>
+        <tr>
+          <th class="o-side">Ord</th><th class="num">Px</th>
+          <th class="num o-strike">Strike</th>
+          <th class="num">Px</th><th class="o-side">Ord</th>
+        </tr>
+        <tr class="o-kinds"><th colspan="2">Calls</th><th></th><th colspan="2">Puts</th></tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+/** Every live expiry, stacked. */
+function optionBoard(st) {
+  const b = st.optionBoard;
+  if (!b) return '';
+  return `
+    ${rule('Option board', `anchored ${b.anchor}`)}
+    <div class="o-tables">
+      ${b.tables.map((t) => `
+        <div class="o-table ${st.auction?.expiry === t.expiry ? 'live' : ''}">
+          <div class="o-cap">${esc(t.label)} <span class="dim">expires R${t.expiry}</span>
+            ${st.auction?.expiry === t.expiry ? '<span class="o-live">on the block</span>' : ''}</div>
+          ${montage(t, b)}
+        </div>`).join('')}
+    </div>`;
+}
+
+/**
+ * Quote entry for the expiry on the block.
+ *
+ * Only contracts carrying a house order are listed, because only those clear —
+ * the auction runs one house order at a time, so a quote anywhere else could
+ * never trade. Leave a side blank to quote one-way; leave everything blank and
+ * confirm to pass.
+ */
+function quoteTicket(st, me) {
+  const b = st.optionBoard;
+  const live = b?.quotable ?? [];
+
+  if (me.quotesReady) {
+    const n = (me.quotes ?? []).length;
+    return `
+      <div class="n-act done">
+        <div class="n-done">
+          <span class="strong">${n ? `${n} market${n === 1 ? '' : 's'} in` : 'Passed'}</span>
+          <span class="spacer"></span><span class="dim tiny">In</span>
+        </div>
+        <button id="unconfirmQuotes" class="wide">Pull them back</button>
+      </div>`;
+  }
+
+  const saved = new Map((me.quotes ?? []).map((q) => [optKey(q), q]));
+  const val = (o, f) => {
+    const q = saved.get(optKey(o)) ?? ui.quotes[optKey(o)];
+    const v = q?.[f];
+    return v === null || v === undefined ? '' : v;
+  };
+
+  // Sizes outermost, prices against the middle — the same mirror the montage
+  // uses, so a two-sided market reads outward from its own spread.
+  const size = (o, f, label) => `
+    <input class="o-size" inputmode="numeric" placeholder="size" aria-label="${label}"
+           data-q="${optKey(o)}" data-f="${f}" value="${esc(val(o, f))}">`;
+  const price = (o, f, label, side) => `
+    <div class="o-money ${side}">
+      <span class="o-cur">$</span>
+      <input class="o-price" inputmode="decimal" placeholder="0" aria-label="${label}"
+             data-q="${optKey(o)}" data-f="${f}" value="${esc(val(o, f))}">
+    </div>`;
+
+  const rows = live.map((o) => `
+    <div class="o-quote">
+      <div class="o-quote-cap">
+        ${contractTag(o)}
+        <span class="spacer"></span>
+        ${houseFlag(o)}
+      </div>
+      <div class="o-quote-grid">
+        ${size(o, 'bidQty', `${optLabel(o)} bid size`)}
+        ${price(o, 'bidPx', `${optLabel(o)} bid`, 'bid')}
+        ${price(o, 'askPx', `${optLabel(o)} ask`, 'ask')}
+        ${size(o, 'askQty', `${optLabel(o)} ask size`)}
+      </div>
+    </div>`).join('');
+
+  return `
+    <div class="n-act">
+      ${live.length ? `
+        <div class="o-quote-legend">
+          <span>bid size</span><span class="up">your bid</span>
+          <span class="down">your ask</span><span>ask size</span>
+        </div>
+        ${rows}` : '<p class="n-note">No orders on this expiry.</p>'}
+      <button class="primary n-go" id="submitQuotes">Confirm markets</button>
+      <button id="passQuotes" class="wide n-pass">Pass this expiry</button>
+      <p class="n-note">Where the side is hidden you are making a market, not filling
+        an order — which way the house is going is settled when the gate closes. Size is
+        always hidden. Leave a side blank to quote one-way.</p>
+    </div>`;
+}
+
+/**
+ * Pick which rounds carry an expiry.
+ *
+ * The current round always expires — the front month is a pure bet on one dice
+ * roll and it is what the layer is built to teach — so these chips are the
+ * longer-dated ones stacked on top of it. Underneath, what that actually costs:
+ * each live table is a gate the whole table has to clear, and the count tapers
+ * on its own as expiries pass.
+ */
+function expiryPicker(st) {
+  const picked = new Set(st.expiries ?? []);
+  const chips = [];
+  for (let r = 2; r <= st.maxRounds; r++) {
+    chips.push(`<button class="o-chip ${picked.has(r) ? 'on' : ''}" data-expiry="${r}">R${r}</button>`);
+  }
+
+  // How many auction gates each round will actually carry. That is the cost of
+  // a pick, and it is the thing that decides whether a round drags.
+  const gates = [];
+  let worst = 1;
+  for (let r = 1; r <= st.maxRounds; r++) {
+    const n = 1 + [...picked].filter((e) => e > r).length;
+    worst = Math.max(worst, n);
+    gates.push(`<span class="o-gate"><i>R${r}</i>${n}</span>`);
+  }
+
+  return `
+    <div>
+      <span class="n-lab">Expiries — the current round always expires</span>
+      <div class="o-chips">${chips.join('') || '<span class="dim">a one-round game</span>'}</div>
+      <div class="o-plan">
+        <span class="n-lab">Auction gates per round</span>
+        <div class="o-gates">${gates.join('')}</div>
+      </div>
+      <p class="n-note">Options trade first each round, and every live expiry is
+        its own gate — so your longest round runs ${worst} auction gate${worst === 1 ? '' : 's'}
+        before the stock even opens.</p>
+    </div>`;
+}
+
+/** The player's own option book: open contracts, then what has expired. */
+function optionBlotter(me, st) {
+  const open = me.optionPositions ?? [];
+  const settled = me.settledOptions ?? [];
+  const marks = st.optionBoard?.marks ?? {};
+
+  const net = new Map();
+  for (const p of open) {
+    const k = optKey(p);
+    const r = net.get(k) ?? { ...p, qty: 0, cost: 0 };
+    r.qty += p.qty; r.cost += p.premium * p.qty;
+    net.set(k, r);
+  }
+  const rows = [...net.values()].filter((r) => r.qty !== 0);
+
+  return `
+    ${rule('Your options', `${rows.length} open · ${settled.length} settled`)}
+    ${rows.length ? `<div class="scroll-x"><table>
+      <thead><tr><th>Contract</th><th class="num">Qty</th><th class="num">Avg</th>
+        <th class="num">Mark</th><th class="num">P/L</th></tr></thead>
+      <tbody>${rows.map((r) => {
+        const avg = r.cost / r.qty;
+        const mk = marks[optKey(r)];
+        const pl = mk === undefined ? 0 : (mk - avg) * r.qty;
+        return `<tr>
+          <td class="o-contract">${contractTag(r)}</td>
+          <td class="num ${cls(r.qty)}">${signed(r.qty)}</td>
+          <td class="num dim"><span class="o-cur">$</span>${px(avg)}</td>
+          <td class="num">${mk === undefined ? '<span class="o-none">—</span>' : `<span class="o-cur">$</span>${mk}`}</td>
+          <td class="num strong ${cls(pl)}">${mk === undefined ? '<span class="o-none">—</span>' : moneyHTML(pl)}</td>
+        </tr>`;
+      }).join('')}</tbody></table></div>`
+      : '<div class="n-waiting">Nothing open.</div>'}
+    ${settled.length ? `<div class="scroll-x"><table>
+      <thead><tr><th>Expired</th><th class="num">Qty</th><th class="num">Final</th><th class="num">Value</th></tr></thead>
+      <tbody>${settled.slice().reverse().map((s) => `<tr>
+        <td class="o-contract spent">${contractTag(s)}</td>
+        <td class="num ${cls(s.qty)}">${signed(s.qty)}</td>
+        <td class="num"><span class="o-cur">$</span>${s.mark}</td>
+        <td class="num ${cls(s.value)}">${moneyHTML(s.value)}</td>
+      </tr>`).join('')}</tbody></table></div>` : ''}`;
+}
+
 function renderPlayer() {
   const st = S.state, me = S.me;
   if (!st || !me) {
@@ -1043,6 +1375,7 @@ function renderPlayer() {
   // Does the table need something from this player right now? Everything else
   // on screen steps back while it does.
   const owes = (st.phase === 'orders' && !me.ordersReady)
+    || (st.phase === 'auction' && !me.quotesReady)
     || (st.phase === 'cards' && !me.cardsReady);
 
   let action, cta;
@@ -1056,6 +1389,14 @@ function renderPlayer() {
                      `R${st.round} · ${st.seated - waiting.length}/${st.seated}`, true)
       : callToAction(`Order in — waiting on ${waiting.join(', ')}`,
                      `${st.seated - waiting.length}/${st.seated}`, false);
+  } else if (st.phase === 'auction') {
+    action = quoteTicket(st, me);
+    const waiting = st.auction.awaiting;
+    cta = me.quotesReady
+      ? callToAction(`Markets in — waiting on ${waiting.join(', ')}`,
+                     `${st.seated - waiting.length}/${st.seated}`, false)
+      : callToAction(`Your move — quote R${st.auction.expiry}`,
+                     `R${st.round} · ${st.seated - waiting.length}/${st.seated}`, true);
   } else if (st.phase === 'cards') {
     action = cardTicket(st, me);
     cta = owes
@@ -1088,6 +1429,8 @@ function renderPlayer() {
           <i>paid by takers, collected by resters</i>
         </div>` : ''}
 
+      ${st.options ? optionBlotter(me, st) : ''}
+
       ${rule('Your hand', `${me.hand.up + me.hand.down + me.hand.multiply + me.hand.add} left`)}
       <div class="n-hand">
         ${Object.keys(CARD_META).map((k) => `
@@ -1113,6 +1456,9 @@ function renderPlayer() {
       ${st.phase === 'orders' ? lastRoundReplay(st, me) : ''}
       ${cta}
       ${action}
+      ${/* Outside the dimmed block on purpose: this is what you are reading
+            while you quote, so it stays lit even when you owe the table. */ ''}
+      ${st.options ? optionBoard(st) : ''}
       ${secondary}
       <div class="n-foot">
         <span class="dim tiny">Seated as ${esc(me.name)}</span>
@@ -1179,7 +1525,7 @@ function renderDashboard(hostMode = false) {
 
       <div class="n-top">
         <div class="n-mark">
-          <div class="n-lab">Mark</div>
+          <div class="n-lab">Mooncoin mark</div>
           <div class="markcell">
             <div class="m ${ui.markFlash ?? ''}">${st.mark}</div>
             ${sparkline(markPath(st), 132, 46)}
@@ -1239,6 +1585,8 @@ function renderDashboard(hostMode = false) {
               </tbody>
             </table></div>` : ''}
 
+          ${st.options ? optionBoard(st) : ''}
+
           ${st.history.length ? `${rule('Price path')}${historyTable(st)}` : ''}
         </div>
 
@@ -1253,11 +1601,27 @@ function renderDashboard(hostMode = false) {
                   <label class="field"><span>Cards each</span>
                     <input id="cfgCards" class="num" value="${st.cardQty}" inputmode="numeric"></label>
                 </div>
+                ${/* A segmented control, not a button: which state you are in
+                      has to be readable without pressing anything. */ ''}
+                ${/* A segmented control, not a button: which state you are in
+                      has to be readable without pressing anything. */ ''}
+                <div>
+                  <span class="n-lab">Options</span>
+                  <div class="n-seg mode o-toggle">
+                    <button id="cfgOptionsOff" class="${st.options ? '' : 'on'}">Stock only</button>
+                    <button id="cfgOptionsOn" class="${st.options ? 'on' : ''}">Options</button>
+                  </div>
+                </div>
+                ${st.options ? expiryPicker(st) : `
+                  <p class="n-note">The stock game, exactly as it plays today.</p>`}
                 <button class="primary n-go" id="start" ${st.seated < 1 ? 'disabled' : ''}>
                   ${st.seated < 1 ? 'Waiting for players' : `Open the market (${st.seated} seated)`}
                 </button>` : ''}
               ${st.phase === 'orders' || st.phase === 'cards' ? `
-                <button class="wide" id="force">Force the ${st.phase} gate${gate.length ? ` — skips ${esc(gate.join(', '))}` : ''}</button>` : ''}
+                <button class="wide" id="force">Close the ${st.phase === 'auction' ? 'auction' : st.phase} gate now</button>
+                <p class="n-note">${gate.length
+                  ? `${esc(gate.join(', '))} ${gate.length === 1 ? 'has' : 'have'} not confirmed and will sit this one out — ${st.phase === 'orders' ? 'no trade' : st.phase === 'cards' ? 'cards stay in hand' : 'quotes do not clear'}.`
+                  : 'Everyone is in; the gate is about to trip on its own.'}</p>` : ''}
               ${st.phase === 'rolling' ? `
                 <button class="primary n-go" id="roll" ${ui.rolling ? 'disabled' : ''}>
                   ${ui.rolling ? 'Rolling…' : `Roll ${st.dieLabel ?? ''} (${st.rollStep + 1}/4)`}
@@ -1270,6 +1634,10 @@ function renderDashboard(hostMode = false) {
                 <button class="danger" id="reset">Reset</button>
               </div>
             </div>` : ''}
+
+          ${st.phase === 'auction' ? `
+            ${rule(`Auction R${st.auction.expiry}`, `${st.auction.awaiting.length} of ${st.seated} still to quote`)}
+            <div class="n-pad">${waitingPills(st, st.auction.awaiting)}</div>` : ''}
 
           ${st.phase === 'orders' || st.phase === 'cards' ? `
             ${rule('Waiting on', `${gate.length} of ${st.seated}`)}

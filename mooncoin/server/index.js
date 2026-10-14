@@ -85,7 +85,7 @@ function json(res, status, body) {
 }
 
 server.listen(PORT, () => {
-  console.log(`Mooncoin terminal listening on http://localhost:${PORT}`);
+  console.log(`Market Maker listening on http://localhost:${PORT}`);
   if (!configured) {
     console.log('[store] no Redis configured — games live in this process only');
   }
