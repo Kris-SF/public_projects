@@ -658,6 +658,21 @@ function tape(st) {
     <div><span class="t">R${l.round}</span>${esc(l.text)}</div>`).join('')}</div>`;
 }
 
+/**
+ * The way in to the rules.
+ *
+ * Opens in a new tab on purpose: on the join screen somebody is halfway through
+ * taking a seat, and on the lobby screen the table is waiting on them. Neither
+ * should lose their place to read the deck.
+ */
+function howToPlay(pdf = false) {
+  return `
+    <div class="howto">
+      <a href="/how-to-play.html" target="_blank" rel="noopener">How to play</a>
+      ${pdf ? '<span class="sep">·</span><a href="/how-to-play.pdf" target="_blank" rel="noopener">PDF</a>' : ''}
+    </div>`;
+}
+
 // --- Home ------------------------------------------------------------------
 
 function renderHome() {
@@ -696,6 +711,7 @@ function renderHome() {
           </div>
         </div>
       </div>
+      ${howToPlay(true)}
     </div>`;
 
   const code = document.getElementById('joinCode');
@@ -754,6 +770,7 @@ function renderJoin() {
       <div class="row" style="margin-top:8px;justify-content:center">
         <a href="/${esc(S.code)}#dashboard" class="dim">Open the dashboard instead</a>
       </div>
+      ${howToPlay()}
     </div>`;
 
   const input = document.getElementById('name');
@@ -1380,7 +1397,12 @@ function renderPlayer() {
 
   let action, cta;
   if (st.phase === 'lobby') {
-    action = `<div class="n-act plain"><div class="banner wait blink">Waiting for the host to open</div></div>`;
+    // The one moment in the game with nothing to do, which makes it the one
+    // moment somebody will actually read the rules.
+    action = `<div class="n-act plain">
+      <div class="banner wait blink">Waiting for the host to open</div>
+      ${howToPlay()}
+    </div>`;
     cta = callToAction('Lobby', `${st.seated} seated`, false);
   } else if (st.phase === 'orders') {
     action = orderTicket(st, me);
@@ -1525,7 +1547,7 @@ function renderDashboard(hostMode = false) {
 
       <div class="n-top">
         <div class="n-mark">
-          <div class="n-lab">Mooncoin mark</div>
+          <div class="n-lab">Mark</div>
           <div class="markcell">
             <div class="m ${ui.markFlash ?? ''}">${st.mark}</div>
             ${sparkline(markPath(st), 132, 46)}
