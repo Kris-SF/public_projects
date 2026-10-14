@@ -421,6 +421,31 @@ label.field > span {
 }
 .brand .rule { border-top: 1px solid var(--rule); margin-top: 18px; }
 
+/* The rules link. Quiet by default — it is a way out of the screen, not a
+   call to action — but it has to be findable by somebody who is stuck, so it
+   gets a real hit area and comes up to full accent on hover. */
+.howto {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+  font-size: 13px;
+}
+.howto a {
+  color: var(--accent-dim);
+  text-decoration: none;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+.howto a:hover,
+.howto a:focus-visible { color: var(--accent-bright); background: rgba(88, 99, 248, 0.10); }
+.howto .sep { color: var(--grey-dark); }
+
+/* Inside the lobby card it sits under a banner rather than under a panel, so
+   it needs less air above it. */
+.n-act .howto { margin-top: 12px; }
+
 .code-in { font-size: 34px; text-align: center; letter-spacing: 0.28em; text-transform: uppercase; }
 
 .err {
