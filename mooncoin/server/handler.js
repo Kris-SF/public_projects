@@ -64,6 +64,7 @@ const HOST_ACTIONS = {
   roll: (game) => G.lockRoll(game),
   config: (game, msg) => G.updateConfig(game, msg.config ?? {}),
   kick: (game, msg) => G.removePlayer(game, msg.playerId),
+  addBot: (game) => G.addBot(game),
 };
 
 export async function handle({ method, query = {}, body = {} }) {

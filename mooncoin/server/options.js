@@ -7,8 +7,8 @@
  *
  * The one hard rule this layer inherits: the game never quotes an option price.
  * Nothing in this file computes, models or estimates what an option is worth.
- * `intrinsic()` is settlement arithmetic at expiry, not a valuation — it is the
- * cash that changes hands once the underlying has stopped moving.
+ * `intrinsic()` is settlement arithmetic at expiry, not a valuation — it decides
+ * whether a contract is exercised once the underlying has stopped moving.
  *
  * The layer is additive and inert unless `config.options` is on, so the
  * stock-only game keeps its exact behaviour and its exact payloads.
@@ -58,16 +58,16 @@ export const OPTION_DEFAULTS = {
   // signal and of 18 orders per table instead of 6.
   orderCoverage: 'sampled',
 
-  // §3 — how many expiry tables are live at once, counting the current round's.
-  // Each one is a separate gate the whole table has to clear, so this is the
-  // main lever on how long a round takes: 1 is a front-month-only game, 3 is the
-  // spec's current/mid/final. Defaults to 2 because three gates plus stock plus
-  // cards is a lot of beats for one Zoom round.
+  // §3 — how many rounds carry an expiry when the host has not picked them.
+  // Every live expiry is a separate gate the whole table has to clear each
+  // round, so this is the main lever on how long a round takes. Defaults to 2:
+  // the final round for full-game exposure, and the midpoint.
   expiryCount: 2,
 
-  // Exact control, if the derived set is not what you want. When null the
-  // expiries are derived from expiryCount and the game length: the final round
-  // for full-game exposure, then the midpoint.
+  // The host's own picks, as round numbers. When null the set is derived from
+  // expiryCount and the game length. There is no implied expiry: a round the
+  // host did not pick settles no options, and a round with no live table runs
+  // no auction at all.
   fixedExpiries: null,
 
   // §10.1 — resolved: a market order with no quotes on the required side dies.
@@ -113,40 +113,40 @@ export function isTradeable(strike, anchor, cfg = OPTION_DEFAULTS) {
 }
 
 /**
- * The longer-dated expiries this game trades, whatever the current round is.
+ * The rounds that carry an expiry, for the whole game.
  *
  * Either the host's explicit picks, or derived from expiryCount in priority
- * order — full-game exposure first, then the midpoint — so trimming the count
- * drops the least interesting table rather than an arbitrary one.
+ * order — full-game exposure first, then the midpoint, then the first round —
+ * so trimming the count drops the least interesting table rather than an
+ * arbitrary one.
  */
 export function fixedExpiriesFor(maxRounds, cfg = OPTION_DEFAULTS) {
   const picked = cfg.fixedExpiries
-    ?? [maxRounds, Math.ceil(maxRounds / 2)]
-      .slice(0, Math.max(0, (cfg.expiryCount ?? OPTION_DEFAULTS.expiryCount) - 1));
+    ?? [maxRounds, Math.ceil(maxRounds / 2), 1]
+      .slice(0, Math.max(0, cfg.expiryCount ?? OPTION_DEFAULTS.expiryCount));
   return [...new Set(picked)]
     .filter((e) => Number.isInteger(e) && e >= 1 && e <= maxRounds)
     .sort((a, b) => a - b);
 }
 
 /**
- * Which expiry tables are live this round.
+ * Which expiry tables are live this round: every picked expiry still ahead,
+ * nearest first, the current round's included if it was picked.
  *
- * The spec names three — the current round, R3 and R5 — which works for the
- * five-round default and breaks for every other length the host can set, so the
- * set is config. Two rules keep it sane as the game runs out of road: an expiry
- * in the past has gone, and one equal to this round is already the front month
- * rather than a second table. So the count naturally tapers toward the end.
+ * An earlier build put an expiry on every round whether the host asked for it
+ * or not, on the theory that the front month is the purest bet. Played at a
+ * real table it meant three gates a round and a book nobody could read. The
+ * host picks the rounds; nothing else expires, and a round with no live table
+ * skips the auction and goes straight to the stock.
  */
 export function expiryTables(round, maxRounds, cfg = OPTION_DEFAULTS) {
-  // The current round always expires — the front month is a pure bet on one
-  // dice roll, and it is the thing the whole layer is built to teach. An expiry
-  // in the past is gone; one equal to this round is already the front month.
-  return [
-    { key: `r${round}`, expiry: round, label: 'Current round', current: true },
-    ...fixedExpiriesFor(maxRounds, cfg)
-      .filter((e) => e > round)
-      .map((e) => ({ key: `r${e}`, expiry: e, label: `Round ${e}`, current: false })),
-  ];
+  return fixedExpiriesFor(maxRounds, cfg)
+    .filter((e) => e >= round)
+    .map((e) => ({
+      key: `r${e}`, expiry: e,
+      label: e === round ? 'This round' : `Round ${e}`,
+      current: e === round,
+    }));
 }
 
 // ---------------------------------------------------------------------------
@@ -470,26 +470,42 @@ export function optionPL(positions, marks = new Map()) {
 }
 
 /**
- * Settle everything expiring at `round` against the settled price.
+ * Settle everything expiring at `round` against the settled price — by
+ * delivery, not by cash.
  *
- * Longs collect, shorts pay, which the signed quantity handles on its own. The
- * P/L booked is intrinsic less what was paid, so a long call that expires
- * worthless loses exactly its premium and no more.
+ * An option that finishes in the money is exercised: a call hands its holder
+ * the underlying at the strike, a put makes its holder deliver it at the
+ * strike, and the writer takes the other side. The option is gone; a stock
+ * position at the strike price is what remains, and it marks to market with
+ * the rest of the book from then on. An option that finishes out of the money
+ * simply expires.
+ *
+ * Either way the only P/L booked here is the premium: paid and lost by the
+ * long, received and kept by the short. The intrinsic value is not booked as
+ * cash — it shows up as the gap between the strike the stock was delivered at
+ * and the mark it is now worth, which is exactly intrinsic less nothing. So at
+ * the instant of expiry a player's total is the same number cash settlement
+ * would have given them. The difference is what they are holding afterwards.
+ *
+ * Delivery is on the net position per contract: long three and short one of
+ * the same call is two calls, and two calls is two shares. Premium is realised
+ * position by position, because each was paid for separately.
  */
 export function settleExpiring(positions, round, price) {
   const expiring = positions.filter((p) => p.expiry === round);
   const remaining = positions.filter((p) => p.expiry !== round);
 
-  const marks = new Map();
-  for (const p of expiring) marks.set(contractKey(p), intrinsic(p.kind, p.strike, price));
+  const realized = expiring.reduce((a, p) => a - p.premium * p.qty, 0);
 
-  const settled = rollupPositions(expiring).map((r) => ({
-    ...r,
-    price,
-    value: intrinsic(r.kind, r.strike, price) * r.qty,
-  }));
+  const settled = rollupPositions(expiring).map((r) => {
+    const worth = intrinsic(r.kind, r.strike, price);
+    // A call delivers the stock to its holder; a put takes it from them. The
+    // signed contract count carries the writer's side for free.
+    const shares = worth > 0 ? (r.kind === 'call' ? r.qty : -r.qty) : 0;
+    return { ...r, price, intrinsic: worth, value: worth * r.qty, shares };
+  });
 
-  return { realized: optionPL(expiring, marks), settled, remaining };
+  return { realized, settled, remaining };
 }
 
 // ---------------------------------------------------------------------------

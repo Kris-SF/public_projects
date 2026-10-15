@@ -1319,19 +1319,21 @@ html.reveal-print .reveal .slide-number-pdf { display: none !important; }
     <div class="cards">
       <div class="card raised">
         <div class="cap"><span class="kind call">call</span></div>
-        <p class="says" style="margin-top:14px"><b>A bet the coin finishes above a
+        <p class="says" style="margin-top:14px"><b>The right to buy the coin at a
           number.</b> Buy the <b class="num">$100</b> call and if the coin
-          closes at <b class="num">$124</b> it pays you the
-          <b class="num">$24</b> it finished above
-          100. Close below 100 and it pays nothing.</p>
+          closes at <b class="num">$124</b> you are handed
+          <b>1 coin at 100</b> — worth
+          <b class="num">$24</b> more than you pay for it.
+          Close below 100 and it simply expires.</p>
       </div>
       <div class="card raised">
         <div class="cap"><span class="kind put">put</span></div>
-        <p class="says" style="margin-top:14px"><b>A bet the coin finishes below a
+        <p class="says" style="margin-top:14px"><b>The right to sell the coin at a
           number.</b> Buy the <b class="num">$100</b> put and a close at
-          <b class="num">$94</b> pays you the
-          <b class="num">$6</b> it finished below.
-          Close above and it pays nothing.</p>
+          <b class="num">$94</b> lets you sell
+          <b>1 coin at 100</b> — a short position
+          <b class="num">$6</b> to the good.
+          Close above and it simply expires.</p>
       </div>
       <div class="card">
         <div class="cap">The strike</div>
@@ -1343,7 +1345,9 @@ html.reveal-print .reveal .slide-number-pdf { display: none !important; }
           The table discovers it.</p>
       </div>
     </div>
-    <p class="note fragment fade-up"><b>Nothing in this game ever quotes an option for
+    <p class="note fragment fade-up"><b>An option that finishes in the money turns
+      into coin, not cash</b> — the position lands on your blotter at the strike and
+      keeps moving with the market. <b>Nothing in this game ever quotes an option for
       you.</b> There is no model, no suggested value, no fair price on the screen. The
       only option price that exists is one the table agreed on — which is the entire
       exercise.</p>
@@ -1614,7 +1618,8 @@ html.reveal-print .reveal .slide-number-pdf { display: none !important; }
         <div class="big" id="e-pl">+12</div>
         <p class="says" id="e-says"></p>
         <p class="says faint" style="margin-top:12px">Settlement is arithmetic, not
-          opinion: what it finished above the strike, less what you paid.</p>
+          opinion: in the money, you take the coin at the strike and it is worth what
+          it is worth; either way the premium is spent.</p>
       </div>
     </div>
     <p class="note">Three places to stop the slider: a close at
@@ -1970,9 +1975,10 @@ function labExpiry() {
     const says = $('e-says');
     if (side > 0) {
       says.innerHTML = worth === 0
-        ? `Closed <b>below ${STRIKE}</b>, so the call is worth <b>nothing</b>. You lose the `
+        ? `Closed <b>below ${STRIKE}</b>, so the call expires. You lose the `
           + `<b>${PREMIUM}</b> you paid — <b>and that is the floor</b>, however far it falls.`
-        : `Worth <b>${worth}</b> (${px} − ${STRIKE}), less the <b>${PREMIUM}</b> you paid. `
+        : `You take <b>one coin at ${STRIKE}</b>, now worth ${px}: <b>${worth}</b> to the good, `
+          + `less the <b>${PREMIUM}</b> you paid. `
           + (pl === 0 ? '<b>Exactly break-even</b> — this is the line.' : pl > 0
             ? 'Past break-even, and from here <b>there is no ceiling</b>.'
             : 'It paid out, but not enough to cover the premium.');
@@ -1980,7 +1986,8 @@ function labExpiry() {
       says.innerHTML = worth === 0
         ? `Expired worthless. You <b>keep the whole ${PREMIUM}</b> — and that is the most you `
           + 'can ever make on this trade.'
-        : `You owe <b>${worth}</b> and collected <b>${PREMIUM}</b>. `
+        : `You deliver <b>one coin at ${STRIKE}</b> that is worth ${px} — <b>${worth}</b> `
+          + `against you — having collected <b>${PREMIUM}</b>. `
           + (pl >= 0 ? 'Still ahead, just.' : '<b>And this loss has no floor.</b> Every dollar higher costs you another.');
     }
     $('e-pl').previousElementSibling.textContent = side > 0

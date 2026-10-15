@@ -70,6 +70,18 @@ out.teach = {
 out.teach.putWin = settleExpiring(
   [{ playerId: 'you', kind: 'put', strike: 100, expiry: 1, qty: 1, premium: 6, round: 1 }], 1, 94);
 
+// Settlement is by delivery, so `realized` is the premium alone and the rest of
+// the outcome is the delivered stock marked where the coin closed. The slides
+// quote the total — what cash settlement would have shown, which is the number
+// a new player is trying to understand — and the shares, which is what they are
+// actually left holding.
+for (const k of ['win', 'even', 'dust', 'short', 'putWin']) {
+  const t = out.teach[k];
+  const row = t.settled[0];
+  t.shares = row.shares;
+  t.pl = t.realized + (row.price - row.strike) * row.shares;
+}
+
 // --- 8. A crowded contract: the house takes the best, players cross behind it
 const D = { expiry: 5, kind: 'call', strike: 105 };
 const d = (id, b, bq, a, aq) => makeQuote({ playerId: id, ...D, bidPx: b, bidQty: bq, askPx: a, askQty: aq, round: 1 });
