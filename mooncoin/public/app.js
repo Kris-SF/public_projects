@@ -1580,50 +1580,49 @@ function renderPlayer() {
     cta = callToAction('Market closed', `${st.maxRounds} rounds played`, false);
   }
 
-  const secondary = `
-    <div class="n-secondary ${owes ? '' : 'lit'}">
-      ${st.reveal ? `
+  // Each block of the book is its own section, so a wide screen can lay them
+  // out in two columns instead of one long scroll. On a phone they stack as
+  // before. Nothing is dimmed while you owe the table: the point of the book is
+  // that you can read it while deciding, and a book you cannot read is a book.
+  const sec = (html, wide = false) => `<section class="n-sec ${wide ? 'wide' : ''}">${html}</section>`;
+  const sections = [
+    st.reveal ? sec(`
         ${rule(`Round ${st.round} book`, `printed ${st.reveal.price}`)}
         ${ladder(st.reveal)}
         <div class="n-flow">
           Pressure ${signed(st.reveal.pressure ?? 0)} · book absorbed ${st.reveal.absorbed ?? 0} ·
           imbalance ${signed(st.reveal.imbalance)} · print ${signed(impactOf(st.reveal.imbalance))}
           <i>paid by takers, collected by resters</i>
-        </div>` : ''}
-
-      ${st.options ? optionBlotter(me, st) : ''}
-
-      ${st.options ? `${rule('Option trades', 'who traded what')}${optionTape(st, me.name)}` : ''}
-
+        </div>`) : '',
+    st.options ? sec(optionBlotter(me, st), true) : '',   // the by-contract table needs the width
+    st.options ? sec(`${rule('Option trades', 'who traded what')}${optionTape(st, me.name)}`, true) : '',
+    sec(`
       ${rule('Your hand', `${me.hand.up + me.hand.down + me.hand.multiply + me.hand.add} left`)}
       <div class="n-hand">
         ${Object.keys(CARD_META).map((k) => `
           <div class="n-card ${k} ${me.hand[k] === 0 ? 'spent' : ''}">
             <div class="g">${CARD_META[k].glyph}</div><div class="held">${me.hand[k]}</div>
           </div>`).join('')}
-      </div>
-
-      ${rule('Standings', `you are ${rank || '—'} of ${st.seated}`)}
-      ${standingsTable(st, { meId: me.id })}
-
-      ${rule('Your blotter', `${me.fills.length} fills`)}
-      ${blotter(me)}
-
-      ${st.history.length ? `${rule('History', `${st.history.length} settled`)}${historyTable(st)}` : ''}
-    </div>`;
+      </div>`),
+    sec(`${rule('Standings', `you are ${rank || '—'} of ${st.seated}`)}${standingsTable(st, { meId: me.id })}`),
+    sec(`${rule('Your blotter', `${me.fills.length} fills`)}${blotter(me)}`),
+    st.history.length ? sec(`${rule('History', `${st.history.length} settled`)}${historyTable(st)}`, true) : '',
+  ];
 
   app.innerHTML = `
     ${topbar(`<span class="chip">${esc(me.name)}</span><button class="tb-btn" id="toTable">Table</button>`)}
-    <div class="n-wrap">
-      ${alerts()}
-      ${positionStrip(st, me)}
-      ${st.phase === 'orders' ? lastRoundReplay(st, me) : ''}
-      ${cta}
-      ${action}
-      ${/* Outside the dimmed block on purpose: this is what you are reading
-            while you quote, so it stays lit even when you owe the table. */ ''}
-      ${st.options ? optionBoard(st) : ''}
-      ${secondary}
+    <div class="n-wrap ${st.options ? 'has-board' : ''}">
+      <div class="n-alerts">${alerts()}</div>
+      <div class="n-col n-col-act">
+        ${positionStrip(st, me)}
+        ${st.phase === 'orders' ? lastRoundReplay(st, me) : ''}
+        ${cta}
+        ${action}
+      </div>
+      ${/* The board gets a column of its own on a wide screen: it is what you are
+            reading while you quote. */ ''}
+      ${st.options ? `<div class="n-col n-col-market">${optionBoard(st)}</div>` : ''}
+      <div class="n-col n-col-book n-secondary">${sections.join('')}</div>
       <div class="n-foot">
         <span class="dim tiny">Seated as ${esc(me.name)}</span>
         <a class="dim tiny" href="/${esc(st.code)}?new=1">Join as someone else</a>

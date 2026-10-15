@@ -829,12 +829,14 @@ label.field > span {
 }
 
 /* Everything that is not the current move steps back until it is done. */
-.n-secondary { opacity: 0.38; transition: opacity 160ms linear; }
-.n-secondary.lit { opacity: 1; }
+/* The book used to fade to 38% while you owed the table an action. Played at a
+   real table, that meant the thing you were trying to read while deciding was
+   the one thing you could not read. It stays lit. */
+.n-secondary { opacity: 1; }
 
 @media (prefers-reduced-motion: reduce) {
   .n-cta, .n-cta .dot, .blink::after, .n-die.rolling .n-pip { animation: none; }
-  .n-secondary, button, button.primary { transition: none; }
+  button, button.primary { transition: none; }
   .flash-up, .flash-down { animation: none; }
 }
 
@@ -1079,7 +1081,12 @@ label.field > span {
   text-transform: uppercase; color: var(--faint);
   padding: 12px 14px 4px;
 }
-.o-pos { font-size: 14px; }
+/* Not full width: a montage with one expiry would otherwise spread its three
+   columns across the whole panel and put the puts a hand's width from the
+   strike. The columns hug the spine and the table sits centred. */
+table.o-pos { width: auto; margin: 0 auto; font-size: 14px; }
+.o-pos th, .o-pos td { min-width: 3.4em; white-space: nowrap; }
+.o-pos th:last-child, .o-pos td:last-child { border-left: 1px solid var(--ring); }
 .o-pos th { font-size: 9px; padding: 6px 10px; }
 .o-pos td { padding: 6px 10px; }
 .o-pos .o-kinds th {
@@ -1117,3 +1124,39 @@ tbody tr.exercised td:first-child { box-shadow: inset 2px 0 0 var(--cyan); }
 
 /* A round with nothing to auction. */
 .o-gate.none { color: var(--grey-dark); border-style: dashed; }
+
+/* ===========================================================================
+   THE SEAT ON A DESKTOP
+   The seat view was built for a phone — one column, 460px, scroll. On a wide
+   screen that wastes four-fifths of it and buries the book under the ticket.
+   Past 1100px the same markup goes into columns: the thing you are being asked
+   to do on the left, the board you read while doing it in the middle, your book
+   on the right, itself in two columns so the whole round fits without scrolling
+   on an ordinary laptop. The phone layout is untouched.
+   =========================================================================== */
+
+@media (min-width: 1100px) {
+  .n-wrap {
+    max-width: 1560px;
+    padding: 0 16px 24px;
+    display: grid;
+    grid-template-columns: 420px minmax(0, 1fr);
+    gap: 0 20px;
+    align-items: start;
+  }
+  .n-wrap.has-board { grid-template-columns: 400px minmax(300px, 0.9fr) minmax(0, 1.5fr); }
+  .n-wrap > .n-alerts, .n-wrap > .n-foot { grid-column: 1 / -1; }
+  .n-wrap > .n-alerts:empty { display: none; }
+  .n-col { min-width: 0; }
+  .n-col-book {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 16px;
+    align-content: start;
+  }
+  .n-sec { min-width: 0; }
+  .n-sec.wide { grid-column: 1 / -1; }
+  /* Inside a column the board's tables stack; side by side they would be too
+     narrow to read. */
+  .n-col-market .o-tables { grid-template-columns: 1fr; }
+}
