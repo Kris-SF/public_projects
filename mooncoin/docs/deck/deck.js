@@ -260,9 +260,10 @@ function labExpiry() {
     const says = $('e-says');
     if (side > 0) {
       says.innerHTML = worth === 0
-        ? `Closed <b>below ${STRIKE}</b>, so the call is worth <b>nothing</b>. You lose the `
+        ? `Closed <b>below ${STRIKE}</b>, so the call expires. You lose the `
           + `<b>${PREMIUM}</b> you paid — <b>and that is the floor</b>, however far it falls.`
-        : `Worth <b>${worth}</b> (${px} − ${STRIKE}), less the <b>${PREMIUM}</b> you paid. `
+        : `You take <b>one coin at ${STRIKE}</b>, now worth ${px}: <b>${worth}</b> to the good, `
+          + `less the <b>${PREMIUM}</b> you paid. `
           + (pl === 0 ? '<b>Exactly break-even</b> — this is the line.' : pl > 0
             ? 'Past break-even, and from here <b>there is no ceiling</b>.'
             : 'It paid out, but not enough to cover the premium.');
@@ -270,7 +271,8 @@ function labExpiry() {
       says.innerHTML = worth === 0
         ? `Expired worthless. You <b>keep the whole ${PREMIUM}</b> — and that is the most you `
           + 'can ever make on this trade.'
-        : `You owe <b>${worth}</b> and collected <b>${PREMIUM}</b>. `
+        : `You deliver <b>one coin at ${STRIKE}</b> that is worth ${px} — <b>${worth}</b> `
+          + `against you — having collected <b>${PREMIUM}</b>. `
           + (pl >= 0 ? 'Still ahead, just.' : '<b>And this loss has no floor.</b> Every dollar higher costs you another.');
     }
     $('e-pl').previousElementSibling.textContent = side > 0

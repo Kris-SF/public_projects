@@ -25,8 +25,10 @@ import {
 import {
   OPTION_DEFAULTS, createOptionsState, createPlayerOptions, indicateOrders,
   expiryTables, strikeGrid, revealOrders, clearContract, makeQuote, makePosition,
-  contractKey, optionPL, settleExpiring, intrinsic, fixedExpiriesFor,
+  contractKey, optionPL, settleExpiring, intrinsic, fixedExpiriesFor, rollupPositions,
 } from './options.js';
+
+import { BOT_NAMES, botOrder, botCards, botQuotes } from './bots.js';
 
 export const PHASES = ['lobby', 'auction', 'orders', 'cards', 'rolling', 'complete'];
 
@@ -93,6 +95,19 @@ export function addPlayer(game, name) {
   return player;
 }
 
+/**
+ * Seat a bot. Same seat as anyone else, same cap, same deal of cards; the only
+ * difference is the flag, which is what makes it act when a phase opens.
+ */
+export function addBot(game) {
+  const taken = new Set(game.players.map((p) => p.name));
+  const name = BOT_NAMES.find((n) => !taken.has(n));
+  if (!name) throw new Error('Out of bot names');
+  const bot = addPlayer(game, name);
+  bot.bot = true;
+  return bot;
+}
+
 export function removePlayer(game, playerId) {
   if (game.phase !== 'lobby') return false;
   const i = game.players.findIndex((p) => p.id === playerId);
@@ -124,7 +139,7 @@ export function startGame(game, rng = Math.random) {
   game.mark = game.config.openingPrice;
   game.history = [];
   clearRound(game, rng);
-  beginRound(game);
+  beginRound(game, rng);
   logLine(game, `Game opened at ${game.config.openingPrice} — ${game.config.maxRounds} rounds, ${game.config.cardQty} cards each`);
   return game;
 }
@@ -146,6 +161,7 @@ function clearRound(game, rng = Math.random) {
     game.options.quotes = {};
     game.options.ready = {};
     game.options.cleared = [];
+    game.options.tape = [];
     game.options.activeExpiry = null;
     game.options.tableIndex = 0;
   }
@@ -164,12 +180,40 @@ function clearRound(game, rng = Math.random) {
  * the stock order knowing who got filled with what — which is a read worth
  * having rather than a leak.
  */
-function beginRound(game) {
+function beginRound(game, rng = Math.random) {
   if (game.options) {
     game.phase = 'auction';
-    openAuction(game, 0);
+    openAuction(game, 0, rng);
   } else {
     game.phase = 'orders';
+    runBots(game, rng);
+  }
+}
+
+/**
+ * Let every bot owing the current phase act, then confirm.
+ *
+ * Called whenever a gated phase opens. Bots confirm immediately, so a gate only
+ * ever waits on the humans — and if every seat is a bot the gate trips here and
+ * the next phase opens, which calls this again, until the dice, which are the
+ * host's to throw. A bot's action can throw like anyone's would (a card it does
+ * not hold, say); that is a bug in the bot, not something to hide, so it is not
+ * caught.
+ */
+function runBots(game, rng = Math.random) {
+  for (const bot of game.players.filter((p) => p.bot)) {
+    if (game.phase === 'auction' && !game.options.ready[bot.id]) {
+      submitQuotes(game, bot.id, botQuotes(game, bot, rng));
+      confirmQuotes(game, bot.id);
+    } else if (game.phase === 'orders' && !game.ready.orders[bot.id]) {
+      submitOrder(game, bot.id, botOrder(game, bot, rng));
+      confirmOrder(game, bot.id);
+    } else if (game.phase === 'cards' && !game.ready.cards[bot.id]) {
+      submitCards(game, bot.id, botCards(game, bot, rng));
+      confirmCards(game, bot.id);
+    }
+    // Confirming may have tripped the gate and moved the phase on; the loop
+    // simply carries on into whatever opened, which is what we want.
   }
 }
 
@@ -248,6 +292,7 @@ export function tripOrdersGate(game) {
   };
   logLine(game, `Round ${game.round} printed ${result.price} on imbalance ${result.imbalance >= 0 ? '+' : ''}${result.imbalance}`);
   game.phase = 'cards';
+  runBots(game);
   return true;
 }
 
@@ -263,12 +308,16 @@ export function tripOrdersGate(game) {
  * players quote into a `?` and are making a market rather than filling a known
  * order, which is the whole point of the exercise.
  */
-function openAuction(game, index) {
+function openAuction(game, index, rng = Math.random) {
   const tables = expiryTables(game.round, game.config.maxRounds, game.config.optionRules);
   if (index >= tables.length) {
     game.options.activeExpiry = null;
     game.phase = 'orders';
-    logLine(game, 'Auction closed — the stock is open');
+    // A round with nothing left to expire has no auction to close.
+    logLine(game, tables.length
+      ? 'Auction closed — the stock is open'
+      : 'No expiries ahead — straight to the stock');
+    runBots(game, rng);
     return;
   }
   game.options.tableIndex = index;
@@ -276,6 +325,7 @@ function openAuction(game, index) {
   game.options.quotes = {};
   game.options.ready = {};
   logLine(game, `Auction open — expiry R${tables[index].expiry}`);
+  runBots(game, rng);
 }
 
 /** Replace this player's quotes for the expiry on the block. Empty means pass. */
@@ -376,6 +426,24 @@ export function tripAuctionGate(game) {
 
   const traded = results.filter((r) => r.price !== null);
   game.options.cleared = [...(game.options.cleared ?? []), { expiry, results }];
+
+  // The tape: every fill, by name, in one flat list. The clearing results above
+  // are keyed by player id and nested by contract, which is the right shape for
+  // settlement and the wrong shape for a table trying to work out what just
+  // happened to them. "Who bought what from whom at what price" is a row.
+  const name = (id) => (id ? playerById(game, id).name : 'HOUSE');
+  for (const r of results) {
+    for (const t of r.trades) {
+      game.options.tape.push({
+        round: game.round, expiry: r.expiry, kind: r.kind, strike: r.strike,
+        buyer: name(t.buyer), seller: name(t.seller), qty: t.qty, price: t.price,
+        // The clearing price for the contract, so a trade that printed above it
+        // (the house walking the book) reads as what it was.
+        clearing: r.price,
+      });
+      logLine(game, `${name(t.buyer)} bought ${t.qty} ${r.strike} ${r.kind}${t.qty === 1 ? '' : 's'} R${r.expiry} from ${name(t.seller)} at ${t.price}`);
+    }
+  }
   logLine(game, `R${expiry} auction cleared — ${traded.length} of ${results.length} contracts traded`);
 
   openAuction(game, game.options.tableIndex + 1);
@@ -389,9 +457,13 @@ export function tripAuctionGate(game) {
  * the mark is where it ends up once the dice have resolved, and that is the
  * number an option struck for this round is a bet on.
  *
- * Expired rows come off the blotter, so the P/L they realised has to be kept
- * somewhere that outlives them — otherwise a player's score would quietly
- * unwind every time a contract expired.
+ * Settlement is physical. A contract that finishes in the money is exercised
+ * into a stock fill at the strike — written onto the player's blotter like any
+ * other fill, flagged so the blotter can say where it came from — and from then
+ * on it is stock, carried into the next round and hedged or not like any other
+ * position. The premium is the only thing booked as option P/L. Expired rows
+ * come off the option book, so that premium has to be kept somewhere that
+ * outlives them, or a score would quietly unwind every time a contract expired.
  */
 function settleOptions(game) {
   if (!game.options) return [];
@@ -406,15 +478,26 @@ function settleOptions(game) {
     p.optionPositions = remaining;
 
     for (const s of settled) {
-      const mark = intrinsic(s.kind, s.strike, game.mark);
-      game.options.marks[contractKey(s)] = mark;   // the blotter's final mark
+      game.options.marks[contractKey(s)] = s.intrinsic;   // the blotter's final mark
+      if (s.shares !== 0) {
+        p.fills.push({
+          round: game.round, qty: s.shares, price: s.strike,
+          exercise: { kind: s.kind, strike: s.strike, expiry: s.expiry, contracts: s.qty },
+        });
+      }
       p.settledOptions.push({
         round: game.round, kind: s.kind, strike: s.strike, expiry: s.expiry,
-        qty: s.qty, mark, value: s.value,
+        qty: s.qty, mark: s.intrinsic, value: s.value, shares: s.shares,
       });
-      settledRows.push({ name: p.name, qty: s.qty, kind: s.kind, strike: s.strike, mark });
+      settledRows.push({
+        name: p.name, qty: s.qty, kind: s.kind, strike: s.strike,
+        mark: s.intrinsic, shares: s.shares,
+      });
+      const what = `${s.qty > 0 ? '+' : ''}${s.qty} ${s.strike} ${s.kind}${Math.abs(s.qty) === 1 ? '' : 's'}`;
+      logLine(game, s.shares === 0
+        ? `${p.name}: ${what} expired worthless`
+        : `${p.name}: ${what} exercised → ${fmtSigned(s.shares)} shares at ${s.strike}`);
     }
-    logLine(game, `${p.name} settled ${settled.length} contract${settled.length === 1 ? '' : 's'} for ${realized >= 0 ? '+' : ''}${realized}`);
   }
   return settledRows;
 }
@@ -563,7 +646,11 @@ function settleRound(game) {
 
   // Options struck for this round expire against the mark the dice just set.
   const expired = settleOptions(game);
-  if (expired.length) game.history[game.history.length - 1].expired = expired;
+  const h = game.history[game.history.length - 1];
+  if (expired.length) h.expired = expired;
+  // This round's option fills go into the record with it, so the tape reads
+  // back round by round after the auction state has been wiped for the next.
+  if (game.options?.tape?.length) h.optionTrades = game.options.tape;
 
   if (game.round >= game.config.maxRounds) {
     game.phase = 'complete';
@@ -628,6 +715,9 @@ export function updateConfig(game, patch) {
     ...OPTION_DEFAULTS, ...(game.config.optionRules ?? {}), ...(patch.optionRules ?? {}),
   };
   next.optionRules.expiryCount = clampInt(next.optionRules.expiryCount, 1, 3);
+  // The picker sends an empty list when the host unticks the last round. That
+  // is a real choice — options on, nothing expiring — not a request for the
+  // derived default, so it has to survive as an empty array rather than null.
   // An explicit pick survives as an explicit pick, pruned to the game length —
   // shortening the game must not leave an expiry hanging past the last round.
   if (Array.isArray(next.optionRules.fixedExpiries)) {
@@ -675,13 +765,27 @@ function withOptions(game, p) {
   return { ...stock, stockPl: stock.pl, optionPl: options, pl: stock.pl + options };
 }
 
+/**
+ * A player's net option book, contract by contract, for the wall.
+ *
+ * Quantities only — no premiums, no P/L — and only once something has traded.
+ * With the tape public there is nothing here that could not be reconstructed
+ * from it; this just saves everyone the reconstruction.
+ */
+function netBook(p) {
+  return rollupPositions(p.optionPositions ?? [])
+    .map((r) => ({ expiry: r.expiry, kind: r.kind, strike: r.strike, qty: r.qty }));
+}
+
 export function standings(game) {
   return game.players
     .map((p) => ({
       id: p.id,
       seat: p.seat,
       name: p.name,
+      bot: !!p.bot,
       ...withOptions(game, p),
+      ...(game.options ? { optionBook: netBook(p) } : {}),
       cardsLeft: p.hand.up + p.hand.down + p.hand.multiply + p.hand.add,
       ordersReady: !!game.ready.orders[p.id],
       cardsReady: !!game.ready.cards[p.id],
@@ -723,6 +827,10 @@ export function publicState(game) {
         game.options.orders.filter((o) => o.expiry === game.options.activeExpiry),
     } : null,
     standings: standings(game),
+    // Every option fill this round so far, by name. Public on purpose: a trade
+    // has two sides and both of them, and the rest of the table, should be able
+    // to read it off the wall rather than reconstruct it from their blotters.
+    optionTrades: game.options?.tape ?? [],
     history: game.history,
     reveal: game.phase === 'orders' ? null : game.reveal,
     net: game.phase === 'orders' || game.phase === 'cards' ? null : game.net,

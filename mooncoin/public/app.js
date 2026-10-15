@@ -24,6 +24,10 @@ const ui = {
   orderType: 'MARKET',
   cards: { up: 0, down: 0, multiply: 0, add: 0 },
   quotes: {},          // contractKey -> { bidPx, bidQty, askPx, askQty }, being typed
+  // A size you set once and stop typing. Yours, on this device, across games:
+  // it lives in localStorage rather than in the game.
+  defaultSize: (() => { try { return localStorage.getItem('mooncoin:qsize') ?? '1'; } catch { return '1'; } })(),
+  view: 'seat',        // a player's screen: their own seat, or the table's wall
   rolling: false,
   name: '',
   joinCode: '',
@@ -311,7 +315,24 @@ const act = {
   setQuote(key, field, value) {
     const q = ui.quotes[key] ?? (ui.quotes[key] = {});
     q[field] = value.replace(/[^0-9.]/g, '');
+    // Typing a price fills in the size beside it, if the size is still blank —
+    // so a quote is one number to type, not two. Clearing the price clears a
+    // size that was only ever the default, so no phantom order is left behind.
+    const sizeOf = { bidPx: 'bidQty', askPx: 'askQty' }[field];
+    if (sizeOf) {
+      if (q[field] !== '' && !q[sizeOf]) q[sizeOf] = ui.defaultSize;
+      else if (q[field] === '' && q[sizeOf] === ui.defaultSize) q[sizeOf] = '';
+      const el = document.querySelector(`[data-q="${key}"][data-f="${sizeOf}"]`);
+      if (el && el.value !== (q[sizeOf] ?? '')) el.value = q[sizeOf] ?? '';
+    }
   },
+
+  setDefaultSize(value) {
+    ui.defaultSize = value.replace(/[^0-9]/g, '') || '1';
+    try { localStorage.setItem('mooncoin:qsize', ui.defaultSize); } catch { /* private mode */ }
+  },
+
+  setView(view) { ui.view = view; render(); },
 
   /** Only send contracts with something on them; blank rows are not orders. */
   async submitQuotes() {
@@ -321,10 +342,12 @@ const act = {
       const [expiry, kind, strike] = key.split('|');
       if (Number(expiry) !== st.auction?.expiry) continue;
       const num = (v) => (v === '' || v === undefined ? null : Number(v));
+      // The default size backs any price whose size box was left empty.
+      const size = (v) => num(v) ?? Number(ui.defaultSize) ?? 0;
       const row = {
         expiry: Number(expiry), kind, strike: Number(strike),
-        bidPx: num(q.bidPx), bidQty: num(q.bidQty) ?? 0,
-        askPx: num(q.askPx), askQty: num(q.askQty) ?? 0,
+        bidPx: num(q.bidPx), bidQty: num(q.bidPx) === null ? 0 : size(q.bidQty),
+        askPx: num(q.askPx), askQty: num(q.askPx) === null ? 0 : size(q.askQty),
       };
       if (row.bidPx === null && row.askPx === null) continue;
       quotes.push(row);
@@ -594,7 +617,7 @@ function standingsTable(st, opts = {}) {
   const rows = st.standings.map((p, i) => `
     <tr class="${opts.meId === p.id ? 'me' : ''}">
       <td class="num dim">${i + 1}</td>
-      <td class="strong">${esc(p.name)}</td>
+      <td class="strong">${esc(p.name)}${p.bot ? ' <span class="bot-tag">bot</span>' : ''}</td>
       <td class="num ${cls(p.shares)}">${signed(p.shares)}</td>
       <td class="num dim">${p.avgPrice === null ? '—' : px(p.avgPrice)}</td>
       <td class="num strong ${cls(p.pl)}">${money(p.pl)}</td>
@@ -808,6 +831,10 @@ function fillEdge(fill) {
   return { perShare, dollars: perShare * Math.abs(fill.qty) };
 }
 
+/** "+2 × 100 call", "−1 × 95 put": what an exercise fill came from. */
+const exerciseTag = (ex) =>
+  `<span class="dim">via</span> ${signed(ex.contracts)} × ${ex.strike} ${ex.kind}${Math.abs(ex.contracts) === 1 ? '' : 's'}`;
+
 function blotter(me) {
   if (!me.fills.length) return '<div class="body dim">No fills yet.</div>';
   return `
@@ -819,13 +846,16 @@ function blotter(me) {
         </tr></thead>
         <tbody>${me.fills.slice().reverse().map((f) => {
           const pl = (S.state.mark - f.price) * f.qty;
-          const e = fillEdge(f);
-          return `<tr>
+          // Delivered stock was never an order, so it has no edge or slippage to
+          // report — the column says where it came from instead.
+          const e = f.exercise ? null : fillEdge(f);
+          return `<tr class="${f.exercise ? 'exercised' : ''}">
             <td class="num dim">${f.round}</td>
             <td class="num ${cls(f.qty)}">${signed(f.qty)}</td>
             <td class="num">${f.price}</td>
-            <td class="num ${cls(e.perShare)}">${
-              e.perShare === 0 ? 'flat'
+            <td class="num ${e ? cls(e.perShare) : ''}">${
+              f.exercise ? exerciseTag(f.exercise)
+                : e.perShare === 0 ? 'flat'
                 : `${signed(e.perShare)}<span class="dim"> · ${e.dollars > 0 ? '+' : ''}${money(e.dollars)}</span>`
             }</td>
             <td class="num ${cls(pl)}">${money(pl)}</td>
@@ -837,6 +867,7 @@ function blotter(me) {
       <span class="up">Positive</span> is edge — you rested and the print came to you.
       <span class="down">Negative</span> is slippage — you crossed and paid for it.
       Measured against the mark the round opened on.
+      ${me.fills.some((f) => f.exercise) ? '<b>Via</b> is stock an option delivered at its strike.' : ''}
     </div>`;
 }
 
@@ -866,6 +897,10 @@ function wirePlayer() {
   document.querySelectorAll('[data-q]').forEach((el) => {
     el.oninput = (e) => act.setQuote(el.dataset.q, el.dataset.f, e.target.value);
   });
+  const qsize = document.getElementById('qsize');
+  if (qsize) qsize.oninput = (e) => act.setDefaultSize(e.target.value);
+  const toTable = document.getElementById('toTable');
+  if (toTable) toTable.onclick = () => act.setView('table');
 
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
   on('submitQuotes', act.submitQuotes);
@@ -911,6 +946,7 @@ function wireHost(st, joinUrl) {
   on('reset', act.reset);
   on('copyJoin', () => act.copy(joinUrl, 'Join link'));
   on('openDash', () => window.open(`/${st.code}#dashboard`, '_blank'));
+  on('addBot', () => net.send('addBot'));
   on('addSeat', () => window.open(`/${st.code}?new=1`, '_blank'));
 
   document.querySelectorAll('[data-kick]').forEach((b) => {
@@ -1282,6 +1318,11 @@ function quoteTicket(st, me) {
   return `
     <div class="n-act">
       ${live.length ? `
+        <div class="o-default">
+          <span>Default size</span>
+          <input id="qsize" inputmode="numeric" aria-label="default quote size" value="${esc(ui.defaultSize)}">
+          <span class="dim">fills in beside any price you type</span>
+        </div>
         <div class="o-quote-legend">
           <span>bid size</span><span class="up">your bid</span>
           <span class="down">your ask</span><span>ask size</span>
@@ -1307,35 +1348,131 @@ function quoteTicket(st, me) {
 function expiryPicker(st) {
   const picked = new Set(st.expiries ?? []);
   const chips = [];
-  for (let r = 2; r <= st.maxRounds; r++) {
+  for (let r = 1; r <= st.maxRounds; r++) {
     chips.push(`<button class="o-chip ${picked.has(r) ? 'on' : ''}" data-expiry="${r}">R${r}</button>`);
   }
 
   // How many auction gates each round will actually carry. That is the cost of
   // a pick, and it is the thing that decides whether a round drags.
   const gates = [];
-  let worst = 1;
+  let worst = 0;
   for (let r = 1; r <= st.maxRounds; r++) {
-    const n = 1 + [...picked].filter((e) => e > r).length;
+    const n = [...picked].filter((e) => e >= r).length;
     worst = Math.max(worst, n);
-    gates.push(`<span class="o-gate"><i>R${r}</i>${n}</span>`);
+    gates.push(`<span class="o-gate ${n ? '' : 'none'}"><i>R${r}</i>${n}</span>`);
   }
 
   return `
     <div>
-      <span class="n-lab">Expiries — the current round always expires</span>
-      <div class="o-chips">${chips.join('') || '<span class="dim">a one-round game</span>'}</div>
+      <span class="n-lab">Expiries — which rounds settle options</span>
+      <div class="o-chips">${chips.join('')}</div>
       <div class="o-plan">
         <span class="n-lab">Auction gates per round</span>
         <div class="o-gates">${gates.join('')}</div>
       </div>
-      <p class="n-note">Options trade first each round, and every live expiry is
-        its own gate — so your longest round runs ${worst} auction gate${worst === 1 ? '' : 's'}
-        before the stock even opens.</p>
+      <p class="n-note">${picked.size === 0
+        ? 'Nothing picked: options are on but nothing ever expires, so no auction runs.'
+        : `Every live expiry is its own gate before the stock opens, so your longest round
+           runs ${worst} auction gate${worst === 1 ? '' : 's'}. A round with no expiry ahead
+           skips straight to the stock.`}</p>
     </div>`;
 }
 
-/** The player's own option book: open contracts, then what has expired. */
+/**
+ * A net position book as a straddle montage: one row per strike, calls by
+ * expiry down the left, puts by expiry down the right, nearest expiry against
+ * the spine on both sides so the two legs of a straddle sit either side of
+ * their strike. A final column nets the row.
+ *
+ * `book` is a list of { expiry, kind, strike, qty }; `expiries` the columns to
+ * draw, so an empty expiry still shows (a table knows what it can trade) and
+ * one that only exists in a locked position shows too.
+ */
+function positionMontage(book, expiries) {
+  const rows = book.filter((r) => r.qty !== 0);
+  if (!rows.length) return '<div class="n-waiting">Nothing open.</div>';
+
+  const exps = [...new Set([...expiries, ...rows.map((r) => r.expiry)])].sort((a, b) => a - b);
+  const strikes = [...new Set(rows.map((r) => r.strike))].sort((a, b) => a - b);
+  const at = new Map(rows.map((r) => [`${r.expiry}|${r.kind}|${r.strike}`, r.qty]));
+  const cell = (expiry, kind, strike) => {
+    const q = at.get(`${expiry}|${kind}|${strike}`);
+    return q === undefined
+      ? '<td class="num o-none">·</td>'
+      : `<td class="num strong ${cls(q)}">${signed(q)}</td>`;
+  };
+  const calls = exps.slice().reverse();   // far to near, reading in toward the spine
+  const puts = exps;                       // near to far, reading out from it
+  const total = (strike) => rows.filter((r) => r.strike === strike).reduce((a, r) => a + r.qty, 0);
+  const colTotal = (expiry, kind) => rows.filter((r) => r.expiry === expiry && r.kind === kind)
+    .reduce((a, r) => a + r.qty, 0);
+
+  return `
+    <div class="scroll-x"><table class="o-pos">
+      <thead>
+        <tr class="o-kinds">
+          <th colspan="${calls.length}">Calls</th><th></th>
+          <th colspan="${puts.length}">Puts</th><th></th>
+        </tr>
+        <tr>
+          ${calls.map((e) => `<th class="num">R${e}</th>`).join('')}
+          <th class="o-strike">Strike</th>
+          ${puts.map((e) => `<th class="num">R${e}</th>`).join('')}
+          <th class="num">Net</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${strikes.map((k) => `<tr>
+          ${calls.map((e) => cell(e, 'call', k)).join('')}
+          <td class="o-strike num">${k}</td>
+          ${puts.map((e) => cell(e, 'put', k)).join('')}
+          <td class="num strong ${cls(total(k))}">${signed(total(k))}</td>
+        </tr>`).join('')}
+        <tr class="o-foot">
+          ${calls.map((e) => `<td class="num ${cls(colTotal(e, 'call'))}">${signed(colTotal(e, 'call'))}</td>`).join('')}
+          <td class="o-strike dim">net</td>
+          ${puts.map((e) => `<td class="num ${cls(colTotal(e, 'put'))}">${signed(colTotal(e, 'put'))}</td>`).join('')}
+          <td class="num strong">${signed(rows.reduce((a, r) => a + r.qty, 0))}</td>
+        </tr>
+      </tbody>
+    </table></div>`;
+}
+
+/**
+ * Every option fill, round by round, newest first: who bought what from whom
+ * at what price. This round's from the live tape, earlier rounds' from history.
+ */
+function optionTape(st, meName = null) {
+  const rounds = [];
+  if (st.optionTrades?.length) rounds.push({ round: st.round, trades: st.optionTrades, live: true });
+  for (const h of st.history.slice().reverse()) {
+    if (h.optionTrades?.length) rounds.push({ round: h.round, trades: h.optionTrades, live: false });
+  }
+  if (!rounds.length) return '<div class="n-waiting">No option trades yet.</div>';
+
+  const who = (n) => (n === 'HOUSE' ? '<span class="o-house">house</span>'
+    : `<span class="${n === meName ? 'o-me' : ''}">${esc(n)}</span>`);
+  const row = (t) => `
+    <tr>
+      <td>${who(t.buyer)}</td>
+      <td class="num up">${t.qty}</td>
+      <td class="o-contract">${contractTag(t)}</td>
+      <td class="num"><span class="o-cur">$</span>${t.price}${t.price !== t.clearing
+        ? `<span class="dim tiny"> clr ${t.clearing}</span>` : ''}</td>
+      <td>${who(t.seller)}</td>
+    </tr>`;
+
+  return rounds.map((r) => `
+    <div class="o-tape ${r.live ? 'live' : ''}">
+      <div class="o-cap">Round ${r.round} <span class="dim">${r.trades.length} fill${r.trades.length === 1 ? '' : 's'}</span></div>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Buyer</th><th class="num">Qty</th><th>Contract</th><th class="num">Price</th><th>Seller</th></tr></thead>
+        <tbody>${r.trades.map(row).join('')}</tbody>
+      </table></div>
+    </div>`).join('');
+}
+
+/** The player's own option book: the montage, the detail, then what has expired. */
 function optionBlotter(me, st) {
   const open = me.optionPositions ?? [];
   const settled = me.settledOptions ?? [];
@@ -1349,10 +1486,12 @@ function optionBlotter(me, st) {
     net.set(k, r);
   }
   const rows = [...net.values()].filter((r) => r.qty !== 0);
+  const tableExpiries = (st.optionBoard?.tables ?? []).map((t) => t.expiry);
 
   return `
     ${rule('Your options', `${rows.length} open · ${settled.length} settled`)}
-    ${rows.length ? `<div class="scroll-x"><table>
+    ${positionMontage(rows, tableExpiries)}
+    ${rows.length ? `<div class="o-detail-cap">By contract</div><div class="scroll-x"><table>
       <thead><tr><th>Contract</th><th class="num">Qty</th><th class="num">Avg</th>
         <th class="num">Mark</th><th class="num">P/L</th></tr></thead>
       <tbody>${rows.map((r) => {
@@ -1367,14 +1506,15 @@ function optionBlotter(me, st) {
           <td class="num strong ${cls(pl)}">${mk === undefined ? '<span class="o-none">—</span>' : moneyHTML(pl)}</td>
         </tr>`;
       }).join('')}</tbody></table></div>`
-      : '<div class="n-waiting">Nothing open.</div>'}
-    ${settled.length ? `<div class="scroll-x"><table>
-      <thead><tr><th>Expired</th><th class="num">Qty</th><th class="num">Final</th><th class="num">Value</th></tr></thead>
+      : ''}
+    ${settled.length ? `<div class="o-detail-cap">Expired</div><div class="scroll-x"><table>
+      <thead><tr><th>Contract</th><th class="num">Qty</th><th class="num">In by</th><th class="num">Delivered</th></tr></thead>
       <tbody>${settled.slice().reverse().map((s) => `<tr>
         <td class="o-contract spent">${contractTag(s)}</td>
         <td class="num ${cls(s.qty)}">${signed(s.qty)}</td>
-        <td class="num"><span class="o-cur">$</span>${s.mark}</td>
-        <td class="num ${cls(s.value)}">${moneyHTML(s.value)}</td>
+        <td class="num">${s.mark > 0 ? `<span class="o-cur">$</span>${s.mark}` : '<span class="o-none">worthless</span>'}</td>
+        <td class="num ${cls(s.shares ?? 0)}">${s.shares
+          ? `${signed(s.shares)} <span class="dim">@ ${s.strike}</span>` : '<span class="o-none">—</span>'}</td>
       </tr>`).join('')}</tbody></table></div>` : ''}`;
 }
 
@@ -1453,6 +1593,8 @@ function renderPlayer() {
 
       ${st.options ? optionBlotter(me, st) : ''}
 
+      ${st.options ? `${rule('Option trades', 'who traded what')}${optionTape(st, me.name)}` : ''}
+
       ${rule('Your hand', `${me.hand.up + me.hand.down + me.hand.multiply + me.hand.add} left`)}
       <div class="n-hand">
         ${Object.keys(CARD_META).map((k) => `
@@ -1471,7 +1613,7 @@ function renderPlayer() {
     </div>`;
 
   app.innerHTML = `
-    ${topbar(`<span class="chip">${esc(me.name)}</span>`)}
+    ${topbar(`<span class="chip">${esc(me.name)}</span><button class="tb-btn" id="toTable">Table</button>`)}
     <div class="n-wrap">
       ${alerts()}
       ${positionStrip(st, me)}
@@ -1491,7 +1633,7 @@ function renderPlayer() {
   wirePlayer();
 }
 
-function renderDashboard(hostMode = false) {
+function renderDashboard(hostMode = false, fromSeat = false) {
   const st = S.state;
   if (!st) {
     app.innerHTML = `${topbar()}<div class="n-wrap"><div class="banner wait blink">Connecting</div>${alerts()}</div>`;
@@ -1534,7 +1676,9 @@ function renderDashboard(hostMode = false) {
   const chg = last?.chg ?? 0;
 
   app.innerHTML = `
-    ${topbar()}
+    ${topbar(fromSeat
+      ? `<span class="chip">${esc(S.me?.name ?? '')}</span><button class="tb-btn on" id="toSeat">Back to my seat</button>`
+      : '')}
     <div class="n-board">
       ${alerts()}
 
@@ -1609,6 +1753,20 @@ function renderDashboard(hostMode = false) {
 
           ${st.options ? optionBoard(st) : ''}
 
+          ${st.options ? `
+            ${rule('Option trades', 'who traded what, at what')}
+            ${optionTape(st, S.me?.name ?? null)}` : ''}
+
+          ${st.options && st.standings.some((p) => p.optionBook?.length) ? `
+            ${rule('Option positions', 'net, by strike')}
+            <div class="o-books">
+              ${st.standings.filter((p) => p.optionBook?.length).map((p) => `
+                <div class="o-book">
+                  <div class="o-cap">${esc(p.name)}${p.bot ? ' <span class="bot-tag">bot</span>' : ''}</div>
+                  ${positionMontage(p.optionBook, (st.optionBoard?.tables ?? []).map((t) => t.expiry))}
+                </div>`).join('')}
+            </div>` : ''}
+
           ${st.history.length ? `${rule('Price path')}${historyTable(st)}` : ''}
         </div>
 
@@ -1638,7 +1796,10 @@ function renderDashboard(hostMode = false) {
                   <p class="n-note">The stock game, exactly as it plays today.</p>`}
                 <button class="primary n-go" id="start" ${st.seated < 1 ? 'disabled' : ''}>
                   ${st.seated < 1 ? 'Waiting for players' : `Open the market (${st.seated} seated)`}
-                </button>` : ''}
+                </button>
+                <button class="wide" id="addBot" ${st.seated >= 10 ? 'disabled' : ''}>Add a bot</button>
+                <p class="n-note">A bot trades, plays cards and quotes on its own, the moment
+                  each gate opens. It hedges what it gets stuck with, which is the lesson.</p>` : ''}
               ${st.phase === 'orders' || st.phase === 'cards' ? `
                 <button class="wide" id="force">Close the ${st.phase === 'auction' ? 'auction' : st.phase} gate now</button>
                 <p class="n-note">${gate.length
@@ -1679,6 +1840,8 @@ function renderDashboard(hostMode = false) {
     </div>`;
 
   if (hostMode) wireHost(st, joinUrl);
+  const back = document.getElementById('toSeat');
+  if (back) back.onclick = () => act.setView('seat');
 }
 
 // --- Render / route --------------------------------------------------------
@@ -1691,6 +1854,7 @@ function render() {
   const end = active?.selectionEnd;
 
   if (!S.code) renderHome();
+  else if (S.role === 'player' && ui.view === 'table') renderDashboard(false, true);
   else if (S.role === 'player') renderPlayer();
   else if (S.role === 'host') renderDashboard(true);
   else if (S.role === 'dashboard') renderDashboard(false);

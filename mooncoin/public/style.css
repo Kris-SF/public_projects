@@ -1027,3 +1027,93 @@ label.field > span {
 .o-gate i {
   font-style: normal; font-size: 9px; letter-spacing: 0.1em; color: var(--faint);
 }
+
+/* ===========================================================================
+   AFTER THE FIRST REAL TABLE
+   The tape, the position montage, the default size, the way from a seat onto
+   the wall, and the bots. Each one answers something a table could not work
+   out from the screen in front of it.
+   =========================================================================== */
+
+/* --- a button that lives in the topbar ------------------------------------- */
+
+.topbar .tb-btn {
+  font-family: var(--disp); font-size: 12px; font-weight: 600;
+  padding: 4px 11px; border-radius: 999px;
+  background: transparent; color: var(--accent-bright);
+  border: 1px solid rgba(88, 99, 248, 0.45);
+}
+.topbar .tb-btn:hover:not(:disabled) { background: var(--accent-glow); color: #fff; }
+.topbar .tb-btn.on,
+.topbar .tb-btn.on:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+/* --- the bots --------------------------------------------------------------- */
+
+.bot-tag {
+  font-family: var(--mono); font-size: 9px; font-weight: 500;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 4px; margin-left: 5px; vertical-align: 1px;
+  background: rgba(99, 199, 255, 0.12); color: var(--cyan);
+  border: 1px solid rgba(99, 199, 255, 0.28);
+}
+
+/* --- the default size ------------------------------------------------------- */
+
+.o-default {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  margin: 0 0 10px; padding: 8px 10px;
+  background: var(--l1); border: 1px solid var(--ring); border-radius: 8px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--accent-dim);
+}
+.o-default input {
+  width: 3.6em; text-align: center; font-size: 14px; padding: 5px 6px;
+  border-radius: 6px; color: var(--white); text-transform: none;
+}
+.o-default .dim { text-transform: none; letter-spacing: 0; font-family: var(--sans); font-size: 12px; }
+
+/* --- the montage of positions ----------------------------------------------- */
+
+.o-detail-cap {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--faint);
+  padding: 12px 14px 4px;
+}
+.o-pos { font-size: 14px; }
+.o-pos th { font-size: 9px; padding: 6px 10px; }
+.o-pos td { padding: 6px 10px; }
+.o-pos .o-kinds th {
+  text-align: center; color: var(--faint); letter-spacing: 0.16em;
+  border-bottom: 1px solid var(--ring);
+}
+.o-pos th.o-strike, .o-pos td.o-strike { text-align: center !important; }
+.o-pos td.o-none { text-align: center; }
+.o-pos tr.o-foot td {
+  border-top: 1px solid var(--ring-hi);
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 12px;
+}
+.o-books { display: grid; gap: 10px; padding: 0 14px; }
+@media (min-width: 900px) { .o-books { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); } }
+.o-book { background: var(--l1); border: 1px solid var(--ring); border-radius: var(--r); overflow: hidden; }
+
+/* --- the tape --------------------------------------------------------------- */
+
+.o-tape { margin: 0 14px 10px; background: var(--l1); border: 1px solid var(--ring); border-radius: var(--r); overflow: hidden; }
+.o-tape.live { border-color: rgba(88, 99, 248, 0.42); background: var(--l2); }
+.o-tape table { font-size: 13px; }
+.o-tape td { padding: 6px 10px; white-space: nowrap; }
+.o-house {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--accent-bright); background: var(--accent-glow);
+  padding: 2px 7px; border-radius: 4px;
+}
+.o-me { color: var(--white); font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent); }
+.o-tape .tiny { font-size: 10px; }
+
+/* An exercised fill is delivery, not a decision. */
+tbody tr.exercised td { background: rgba(99, 199, 255, 0.05); }
+tbody tr.exercised td:first-child { box-shadow: inset 2px 0 0 var(--cyan); }
+
+/* A round with nothing to auction. */
+.o-gate.none { color: var(--grey-dark); border-style: dashed; }

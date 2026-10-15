@@ -40,9 +40,10 @@ the same seat with the same hand and blotter.
 Each gate trips automatically when every seated player has confirmed; the host
 can force any of them when somebody wanders off.
 
-1. **Auction** *(options games only)* — one gate per live expiry, in round order.
+1. **Auction** *(options games only)* — one gate per live expiry, nearest first.
    Everyone quotes the contracts on the board or passes. The gate reveals that
-   expiry's house orders and clears every contract.
+   expiry's house orders and clears every contract. A round with no expiry
+   still ahead has no auction and opens straight on the stock.
 2. **Orders** — everyone submits a signed quantity and an order type, then
    confirms. The gate reveals the book, prints the round, and writes every
    blotter.
@@ -148,8 +149,9 @@ Four things in the sheet were broken or unbuilt rather than intended:
 ## Options
 
 Off by default; the host turns them on in the lobby and picks which rounds carry
-an expiry. The game never quotes an option price — there is no model, no lookup,
-no fair value anywhere in the code. Every price comes out of the auction.
+an expiry — only those rounds settle anything, and a round the host did not pick
+runs no auction. The game never quotes an option price — there is no model, no
+lookup, no fair value anywhere in the code. Every price comes out of the auction.
 
 Each live expiry shows nine strikes at $5 spacing, re-anchored to the current
 mark every round. **The grid floats but a position locks**: a $100 call bought at
@@ -164,8 +166,28 @@ further level at its own limit. Whatever crossing interest is left then trades
 among the players, all of it printing at the clearing price. A contract nobody
 quoted does not trade: no fill, no print, no bot.
 
-Contracts settle at intrinsic against the **mark** at the end of the round they
-expire in — the dice price, not the print.
+Contracts settle **by delivery** against the **mark** at the end of the round
+they expire in — the dice price, not the print. A call that finishes in the money
+hands its holder the stock at the strike; a put makes its holder deliver it at
+the strike; the writer takes the other side. The fill lands on the blotter like
+any other and marks to market from then on. Out of the money, the contract just
+expires. The premium is the only option P/L booked, so a player's score at the
+instant of expiry is exactly what cash settlement would have given — the
+difference is what they are holding afterwards.
+
+Every option fill is public: the tape names buyer, seller, contract, size and
+price, and the wall shows each player's net book by strike. A player can flip
+to the wall from their own seat and back.
+
+## Bots
+
+The host can seat bots from the lobby. A bot fills in its own seat the moment a
+gate opens — a stock order, cards, quotes on every contract on the block — so a
+gate only ever waits on the humans. Its idea of what an option is worth is a
+deliberately crude rule of thumb with noise on it, lives in `bots.js`, and is
+never shown anywhere; the only thing that leaves is a quote, which clears like
+anyone else's. It hedges what the auction leaves it holding and leans its cards
+the way its stock wants the coin to go.
 
 ## Layout
 
@@ -176,6 +198,7 @@ server/
   engine.js      stock pricing and position math, no state, no I/O
   options.js     strike grid, order generation, the auction, option accounting
   game.js        state machine: phases, gates, dealing, settlement
+  bots.js        the seats that fill themselves in
   handler.js     the API, transport-agnostic
   store.js       Redis over the Upstash REST API, memory when unconfigured
   index.js       local dev server: static files + the same handler

@@ -456,19 +456,21 @@
     <div class="cards">
       <div class="card raised">
         <div class="cap"><span class="kind call">call</span></div>
-        <p class="says" style="margin-top:14px"><b>A bet the coin finishes above a
+        <p class="says" style="margin-top:14px"><b>The right to buy the coin at a
           number.</b> Buy the <b class="num">${{teach.strike}}</b> call and if the coin
-          closes at <b class="num">${{teach.win.settled[0].price}}</b> it pays you the
-          <b class="num">${{teach.win.settled[0].value}}</b> it finished above
-          {{teach.strike}}. Close below {{teach.strike}} and it pays nothing.</p>
+          closes at <b class="num">${{teach.win.settled[0].price}}</b> you are handed
+          <b>{{teach.win.shares}} coin at {{teach.strike}}</b> — worth
+          <b class="num">${{teach.win.settled[0].value}}</b> more than you pay for it.
+          Close below {{teach.strike}} and it simply expires.</p>
       </div>
       <div class="card raised">
         <div class="cap"><span class="kind put">put</span></div>
-        <p class="says" style="margin-top:14px"><b>A bet the coin finishes below a
+        <p class="says" style="margin-top:14px"><b>The right to sell the coin at a
           number.</b> Buy the <b class="num">${{teach.strike}}</b> put and a close at
-          <b class="num">${{teach.putWin.settled[0].price}}</b> pays you the
-          <b class="num">${{teach.putWin.settled[0].value}}</b> it finished below.
-          Close above and it pays nothing.</p>
+          <b class="num">${{teach.putWin.settled[0].price}}</b> lets you sell
+          <b>{{teach.putWin.shares * -1}} coin at {{teach.strike}}</b> — a short position
+          <b class="num">${{teach.putWin.settled[0].value}}</b> to the good.
+          Close above and it simply expires.</p>
       </div>
       <div class="card">
         <div class="cap">The strike</div>
@@ -480,7 +482,9 @@
           The table discovers it.</p>
       </div>
     </div>
-    <p class="note fragment fade-up"><b>Nothing in this game ever quotes an option for
+    <p class="note fragment fade-up"><b>An option that finishes in the money turns
+      into coin, not cash</b> — the position lands on your blotter at the strike and
+      keeps moving with the market. <b>Nothing in this game ever quotes an option for
       you.</b> There is no model, no suggested value, no fair price on the screen. The
       only option price that exists is one the table agreed on — which is the entire
       exercise.</p>
@@ -748,20 +752,21 @@
       </div>
       <div class="readout">
         <div class="cap">Bought the ${{teach.strike}} call for ${{teach.premium}}</div>
-        <div class="big" id="e-pl">+{{teach.win.realized}}</div>
+        <div class="big" id="e-pl">+{{teach.win.pl}}</div>
         <p class="says" id="e-says"></p>
         <p class="says faint" style="margin-top:12px">Settlement is arithmetic, not
-          opinion: what it finished above the strike, less what you paid.</p>
+          opinion: in the money, you take the coin at the strike and it is worth what
+          it is worth; either way the premium is spent.</p>
       </div>
     </div>
     <p class="note">Three places to stop the slider: a close at
       <b class="num">{{teach.win.settled[0].price}}</b> makes the call worth
       <b class="num">{{teach.win.settled[0].value}}</b> against the {{teach.premium}} you
-      paid, so <b class="up">+{{teach.win.realized}}</b>; a close at
+      paid, so <b class="up">+{{teach.win.pl}}</b>; a close at
       <b class="num">{{teach.even.settled[0].price}}</b> is worth exactly what you paid,
-      so <b>{{teach.even.realized}}</b>; a close at
+      so <b>{{teach.even.pl}}</b>; a close at
       <b class="num">{{teach.dust.settled[0].price}}</b> is worth nothing, so
-      <b class="down">{{teach.dust.realized}}</b> — and never worse than that.
+      <b class="down">{{teach.dust.pl}}</b> — and never worse than that.
       <em>Flip to selling and every number is mirrored:</em> the seller's best round is
       <b class="up">+{{teach.premium}}</b> and their worst has no floor at all.</p>
   </div>
