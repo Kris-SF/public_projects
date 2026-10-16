@@ -1461,8 +1461,7 @@ function optionTape(st, meName = null) {
       <td>${who(t.buyer)}</td>
       <td class="num up">${t.qty}</td>
       <td class="o-contract">${contractTag(t)}</td>
-      <td class="num"><span class="o-cur">$</span>${t.price}${t.price !== t.clearing
-        ? `<div class="dim tiny">contract cleared ${t.clearing}</div>` : ''}</td>
+      <td class="num"><span class="o-cur">$</span>${t.price}</td>
       <td>${who(t.seller)}</td>
     </tr>`;
 
