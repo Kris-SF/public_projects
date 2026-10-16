@@ -1388,18 +1388,22 @@ function expiryPicker(st) {
  * draw, so an empty expiry still shows (a table knows what it can trade) and
  * one that only exists in a locked position shows too.
  */
-function positionMontage(book, expiries) {
+function positionMontage(book, expiries, { counts = false } = {}) {
   const rows = book.filter((r) => r.qty !== 0);
   if (!rows.length) return '<div class="n-waiting">Nothing open.</div>';
+  // Open interest is a count, not a side: no sign, no colour, and the "net"
+  // row and column are plain totals.
+  const show = counts ? (q) => `<td class="num strong">${q}</td>`
+    : (q) => `<td class="num strong ${cls(q)}">${signed(q)}</td>`;
+  const tot = counts ? (q) => String(q) : signed;
+  const tcls = counts ? () => '' : cls;
 
   const exps = [...new Set([...expiries, ...rows.map((r) => r.expiry)])].sort((a, b) => a - b);
   const strikes = [...new Set(rows.map((r) => r.strike))].sort((a, b) => a - b);
   const at = new Map(rows.map((r) => [`${r.expiry}|${r.kind}|${r.strike}`, r.qty]));
   const cell = (expiry, kind, strike) => {
     const q = at.get(`${expiry}|${kind}|${strike}`);
-    return q === undefined
-      ? '<td class="num o-none">·</td>'
-      : `<td class="num strong ${cls(q)}">${signed(q)}</td>`;
+    return q === undefined ? '<td class="num o-none">·</td>' : show(q);
   };
   const calls = exps.slice().reverse();   // far to near, reading in toward the spine
   const puts = exps;                       // near to far, reading out from it
@@ -1418,7 +1422,7 @@ function positionMontage(book, expiries) {
           ${calls.map((e) => `<th class="num">R${e}</th>`).join('')}
           <th class="o-strike">Strike</th>
           ${puts.map((e) => `<th class="num">R${e}</th>`).join('')}
-          <th class="num">Net</th>
+          <th class="num">${counts ? 'Total' : 'Net'}</th>
         </tr>
       </thead>
       <tbody>
@@ -1426,13 +1430,13 @@ function positionMontage(book, expiries) {
           ${calls.map((e) => cell(e, 'call', k)).join('')}
           <td class="o-strike num">${k}</td>
           ${puts.map((e) => cell(e, 'put', k)).join('')}
-          <td class="num strong ${cls(total(k))}">${signed(total(k))}</td>
+          <td class="num strong ${tcls(total(k))}">${tot(total(k))}</td>
         </tr>`).join('')}
         <tr class="o-foot">
-          ${calls.map((e) => `<td class="num ${cls(colTotal(e, 'call'))}">${signed(colTotal(e, 'call'))}</td>`).join('')}
-          <td class="o-strike dim">net</td>
-          ${puts.map((e) => `<td class="num ${cls(colTotal(e, 'put'))}">${signed(colTotal(e, 'put'))}</td>`).join('')}
-          <td class="num strong">${signed(rows.reduce((a, r) => a + r.qty, 0))}</td>
+          ${calls.map((e) => `<td class="num ${tcls(colTotal(e, 'call'))}">${tot(colTotal(e, 'call'))}</td>`).join('')}
+          <td class="o-strike dim">${counts ? 'total' : 'net'}</td>
+          ${puts.map((e) => `<td class="num ${tcls(colTotal(e, 'put'))}">${tot(colTotal(e, 'put'))}</td>`).join('')}
+          <td class="num strong">${tot(rows.reduce((a, r) => a + r.qty, 0))}</td>
         </tr>
       </tbody>
     </table></div>`;
@@ -1458,7 +1462,7 @@ function optionTape(st, meName = null) {
       <td class="num up">${t.qty}</td>
       <td class="o-contract">${contractTag(t)}</td>
       <td class="num"><span class="o-cur">$</span>${t.price}${t.price !== t.clearing
-        ? `<span class="dim tiny"> clr ${t.clearing}</span>` : ''}</td>
+        ? `<div class="dim tiny">contract cleared ${t.clearing}</div>` : ''}</td>
       <td>${who(t.seller)}</td>
     </tr>`;
 
@@ -1491,31 +1495,56 @@ function optionBlotter(me, st) {
   return `
     ${rule('Your options', `${rows.length} open · ${settled.length} settled`)}
     ${positionMontage(rows, tableExpiries)}
-    ${rows.length ? `<div class="o-detail-cap">By contract</div><div class="scroll-x"><table>
-      <thead><tr><th>Contract</th><th class="num">Qty</th><th class="num">Avg</th>
-        <th class="num">Mark</th><th class="num">P/L</th></tr></thead>
-      <tbody>${rows.map((r) => {
+    ${rows.length ? (() => {
+      // Time premium: what the contract is marked at over what it is already
+      // in the money by, times the position. Long it and you are paying for
+      // the time; short it and you are being paid. A contract the auction has
+      // not priced is carried at its premium, like its P/L is.
+      const lines = rows.map((r) => {
         const avg = r.cost / r.qty;
         const mk = marks[optKey(r)];
+        const carried = mk === undefined ? avg : mk;
+        const inThe = r.kind === 'call' ? Math.max(0, st.mark - r.strike) : Math.max(0, r.strike - st.mark);
+        const time = (carried - inThe) * r.qty;
         const pl = mk === undefined ? 0 : (mk - avg) * r.qty;
-        return `<tr>
+        return { r, avg, mk, time, pl };
+      });
+      const netTime = lines.reduce((a, l) => a + l.time, 0);
+      const netPl = lines.reduce((a, l) => a + l.pl, 0);
+      return `<div class="o-detail-cap">By contract</div><div class="scroll-x"><table>
+      <thead><tr><th>Contract</th><th class="num">Qty</th><th class="num">Avg</th>
+        <th class="num">Mark</th><th class="num">Time</th><th class="num">P/L</th></tr></thead>
+      <tbody>${lines.map(({ r, avg, mk, time, pl }) => `<tr>
           <td class="o-contract">${contractTag(r)}</td>
           <td class="num ${cls(r.qty)}">${signed(r.qty)}</td>
           <td class="num dim"><span class="o-cur">$</span>${px(avg)}</td>
           <td class="num">${mk === undefined ? '<span class="o-none">—</span>' : `<span class="o-cur">$</span>${mk}`}</td>
+          <td class="num ${cls(time)}">${moneyHTML(time)}</td>
           <td class="num strong ${cls(pl)}">${mk === undefined ? '<span class="o-none">—</span>' : moneyHTML(pl)}</td>
-        </tr>`;
-      }).join('')}</tbody></table></div>`
-      : ''}
+        </tr>`).join('')}
+        <tr class="o-foot"><td class="dim">net</td><td></td><td></td><td></td>
+          <td class="num strong ${cls(netTime)}">${moneyHTML(netTime)}</td>
+          <td class="num strong ${cls(netPl)}">${moneyHTML(netPl)}</td></tr>
+      </tbody></table></div>
+      <div class="n-legend"><b>Time</b> is premium above what the contract is already in the money
+        by: <span class="up">positive</span> you own it and the clock is against you,
+        <span class="down">negative</span> you sold it and the clock is with you.</div>`;
+    })() : ''}
     ${settled.length ? `<div class="o-detail-cap">Expired</div><div class="scroll-x"><table>
-      <thead><tr><th>Contract</th><th class="num">Qty</th><th class="num">In by</th><th class="num">Delivered</th></tr></thead>
+      <thead><tr><th>Contract</th><th class="num">Qty</th><th class="num">Mark → in by</th>
+        <th class="num">vs mark</th><th class="num">All-in</th><th class="num">Delivered</th></tr></thead>
       <tbody>${settled.slice().reverse().map((s) => `<tr>
         <td class="o-contract spent">${contractTag(s)}</td>
         <td class="num ${cls(s.qty)}">${signed(s.qty)}</td>
-        <td class="num">${s.mark > 0 ? `<span class="o-cur">$</span>${s.mark}` : '<span class="o-none">worthless</span>'}</td>
+        <td class="num"><span class="dim">${s.priorMark === undefined ? '—' : px(s.priorMark, s.priorMark % 1 ? 2 : 0)} →</span>
+          ${s.mark > 0 ? `<span class="o-cur">$</span>${s.mark}` : '<span class="o-none">0</span>'}</td>
+        <td class="num strong ${cls(s.plFromMark ?? 0)}">${s.plFromMark === undefined ? '—' : moneyHTML(s.plFromMark)}</td>
+        <td class="num ${cls(s.plAllIn ?? 0)}">${s.plAllIn === undefined ? '—' : moneyHTML(s.plAllIn)}</td>
         <td class="num ${cls(s.shares ?? 0)}">${s.shares
           ? `${signed(s.shares)} <span class="dim">@ ${s.strike}</span>` : '<span class="o-none">—</span>'}</td>
-      </tr>`).join('')}</tbody></table></div>` : ''}`;
+      </tr>`).join('')}</tbody></table></div>
+      <div class="n-legend"><b>vs mark</b> is what the expiry did against the price you were
+        carrying the contract at; <b>all-in</b> is against what you paid or received.</div>` : ''}`;
 }
 
 function renderPlayer() {
@@ -1750,21 +1779,19 @@ function renderDashboard(hostMode = false, fromSeat = false) {
               </tbody>
             </table></div>` : ''}
 
+          ${/* Open interest first — how much is open where is a market fact —
+                and the board, which everyone already has on their own mat,
+                beneath it. Nobody's position is on the wall. */ ''}
+          ${st.options ? `
+            ${rule('Open interest', 'contracts outstanding, by strike')}
+            <div class="n-pad">${positionMontage(st.openInterest ?? [],
+              (st.optionBoard?.tables ?? []).map((t) => t.expiry), { counts: true })}</div>` : ''}
+
           ${st.options ? optionBoard(st) : ''}
 
           ${st.options ? `
             ${rule('Option trades', 'who traded what, at what')}
             ${optionTape(st, S.me?.name ?? null)}` : ''}
-
-          ${st.options && st.standings.some((p) => p.optionBook?.length) ? `
-            ${rule('Option positions', 'net, by strike')}
-            <div class="o-books">
-              ${st.standings.filter((p) => p.optionBook?.length).map((p) => `
-                <div class="o-book">
-                  <div class="o-cap">${esc(p.name)}${p.bot ? ' <span class="bot-tag">bot</span>' : ''}</div>
-                  ${positionMontage(p.optionBook, (st.optionBoard?.tables ?? []).map((t) => t.expiry))}
-                </div>`).join('')}
-            </div>` : ''}
 
           ${st.history.length ? `${rule('Price path')}${historyTable(st)}` : ''}
         </div>

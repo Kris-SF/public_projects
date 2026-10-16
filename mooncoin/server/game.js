@@ -468,6 +468,11 @@ export function tripAuctionGate(game) {
 function settleOptions(game) {
   if (!game.options) return [];
 
+  // Snapshot the marks before anyone settles: the first player through sets a
+  // contract's mark to intrinsic, and the second holder of the same contract
+  // would otherwise read that back as the mark they were carrying.
+  const priorMarks = { ...game.options.marks };
+
   const settledRows = [];
   for (const p of game.players) {
     const { realized, settled, remaining } =
@@ -478,6 +483,14 @@ function settleOptions(game) {
     p.optionPositions = remaining;
 
     for (const s of settled) {
+      // The mark the position was carried at going into the dice — the last
+      // auction price, or the premium when nothing has cleared since. The
+      // expiry's P/L against that is what the round did to you; against the
+      // premium is what the whole trade did.
+      const priorMark = priorMarks[contractKey(s)] ?? s.cost / s.qty;
+      s.priorMark = priorMark;
+      s.plFromMark = (s.intrinsic - priorMark) * s.qty;
+      s.plAllIn = s.intrinsic * s.qty - s.cost;
       game.options.marks[contractKey(s)] = s.intrinsic;   // the blotter's final mark
       if (s.shares !== 0) {
         p.fills.push({
@@ -488,10 +501,11 @@ function settleOptions(game) {
       p.settledOptions.push({
         round: game.round, kind: s.kind, strike: s.strike, expiry: s.expiry,
         qty: s.qty, mark: s.intrinsic, value: s.value, shares: s.shares,
+        priorMark: s.priorMark, plFromMark: s.plFromMark, plAllIn: s.plAllIn,
       });
       settledRows.push({
         name: p.name, qty: s.qty, kind: s.kind, strike: s.strike,
-        mark: s.intrinsic, shares: s.shares,
+        mark: s.intrinsic, shares: s.shares, priorMark: s.priorMark, plFromMark: s.plFromMark,
       });
       const what = `${s.qty > 0 ? '+' : ''}${s.qty} ${s.strike} ${s.kind}${Math.abs(s.qty) === 1 ? '' : 's'}`;
       logLine(game, s.shares === 0
@@ -766,15 +780,32 @@ function withOptions(game, p) {
 }
 
 /**
- * A player's net option book, contract by contract, for the wall.
+ * Open interest, contract by contract: how many contracts are outstanding.
  *
- * Quantities only — no premiums, no P/L — and only once something has traded.
- * With the tape public there is nothing here that could not be reconstructed
- * from it; this just saves everyone the reconstruction.
+ * Every contract has a long and a short, and the house is one of the parties,
+ * so counting only the players' books under-counts whenever the house is net
+ * anything. With the house's position being minus the players' total, the
+ * outstanding count per contract is half the sum of everyone's absolute
+ * position, house included — which is (Σ|player net| + |Σ player net|) / 2.
+ *
+ * This is what the wall shows instead of anyone's book: how much is open where,
+ * which is a market fact, rather than who is long it, which is theirs.
  */
-function netBook(p) {
-  return rollupPositions(p.optionPositions ?? [])
-    .map((r) => ({ expiry: r.expiry, kind: r.kind, strike: r.strike, qty: r.qty }));
+function openInterest(game) {
+  const by = new Map();
+  for (const p of game.players) {
+    for (const r of rollupPositions(p.optionPositions ?? [])) {
+      const k = contractKey(r);
+      const row = by.get(k) ?? { expiry: r.expiry, kind: r.kind, strike: r.strike, abs: 0, net: 0 };
+      row.abs += Math.abs(r.qty);
+      row.net += r.qty;
+      by.set(k, row);
+    }
+  }
+  return [...by.values()]
+    .map(({ expiry, kind, strike, abs, net }) => ({ expiry, kind, strike, qty: (abs + Math.abs(net)) / 2 }))
+    .filter((r) => r.qty > 0)
+    .sort((a, b) => a.expiry - b.expiry || a.strike - b.strike || a.kind.localeCompare(b.kind));
 }
 
 export function standings(game) {
@@ -785,7 +816,6 @@ export function standings(game) {
       name: p.name,
       bot: !!p.bot,
       ...withOptions(game, p),
-      ...(game.options ? { optionBook: netBook(p) } : {}),
       cardsLeft: p.hand.up + p.hand.down + p.hand.multiply + p.hand.add,
       ordersReady: !!game.ready.orders[p.id],
       cardsReady: !!game.ready.cards[p.id],
@@ -831,6 +861,7 @@ export function publicState(game) {
     // has two sides and both of them, and the rest of the table, should be able
     // to read it off the wall rather than reconstruct it from their blotters.
     optionTrades: game.options?.tape ?? [],
+    openInterest: game.options ? openInterest(game) : [],
     history: game.history,
     reveal: game.phase === 'orders' ? null : game.reveal,
     net: game.phase === 'orders' || game.phase === 'cards' ? null : game.net,
