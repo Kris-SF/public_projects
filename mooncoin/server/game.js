@@ -417,7 +417,7 @@ export function tripAuctionGate(game) {
     results.push(result);
     if (result.price === null) continue;
 
-    game.options.marks[contractKey(result)] = result.price;
+    game.options.marks[contractKey(result)] = result.last;
     for (const t of result.trades) {
       if (t.buyer) writeOption(game, t.buyer, result, t.qty, t.price);
       if (t.seller) writeOption(game, t.seller, result, -t.qty, t.price);
@@ -437,9 +437,6 @@ export function tripAuctionGate(game) {
       game.options.tape.push({
         round: game.round, expiry: r.expiry, kind: r.kind, strike: r.strike,
         buyer: name(t.buyer), seller: name(t.seller), qty: t.qty, price: t.price,
-        // The clearing price for the contract, so a trade that printed above it
-        // (the house walking the book) reads as what it was.
-        clearing: r.price,
       });
       logLine(game, `${name(t.buyer)} bought ${t.qty} ${r.strike} ${r.kind}${t.qty === 1 ? '' : 's'} R${r.expiry} from ${name(t.seller)} at ${t.price}`);
     }

@@ -351,7 +351,9 @@ export function clearContract(order, quotes, opts = {}) {
   const result = {
     expiry: order.expiry, kind: order.kind, strike: order.strike,
     side: order.side, qty: order.qty,
-    price: null, filled: 0, trades: [],
+    price: null,    // the clearing price: where the first trade happened
+    last: null,     // the last sale: where the final trade happened
+    filled: 0, trades: [],
   };
   if (!taking.length) return result;
 
@@ -403,6 +405,10 @@ export function clearContract(order, quotes, opts = {}) {
     }
   }
 
+  // The last sale is what the contract is marked at afterwards. The clearing
+  // price is a rule about how the auction fills; the last sale is simply the
+  // last price anyone paid, which is what a mark means everywhere else.
+  result.last = result.trades[result.trades.length - 1].price;
   return result;
 }
 

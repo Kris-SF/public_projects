@@ -742,7 +742,30 @@ test('the gate reveals, clears, and moves to the next expiry in round order', ()
   const traded = g.options.cleared[0].results.filter((r) => r.price !== null);
   assert.ok(traded.length >= 1);
   const key = contractKey(traded[0]);
-  assert.equal(g.options.marks[key], traded[0].price);
+  assert.equal(g.options.marks[key], traded[0].last, 'marked at the last sale');
+});
+
+test('a contract is marked at its last sale, not at the clearing price', () => {
+  // TEST 4's book: the house buys 5, Ana offers 2 at 10, Ben 4 at 14. It clears
+  // at 10 and walks to 14. The last price anyone paid is 14, so that is the mark;
+  // whoever sold at 10 is now carrying a 10 sale against a 14 mark, which is
+  // exactly what happened to them.
+  const C = { expiry: 3, kind: 'call', strike: 100 };
+  const q = (id, a, aq) => makeQuote({ playerId: id, ...C, askPx: a, askQty: aq, round: 1 });
+  const r = clearContract({ ...C, side: 'BUY', qty: 5 }, [q('ana', 10, 2), q('ben', 14, 4)], { rng: () => 0.5 });
+  assert.equal(r.price, 10, 'clearing price is where the first trade happened');
+  assert.equal(r.last, 14, 'last sale is where the final one did');
+  // And in the game, that is the mark.
+  const g = twoSeats({ fixedExpiries: [1], orderCoverage: 'all' });
+  const [alice, bob] = g.players;
+  const order = g.options.orders.find((o) => o.expiry === 1);
+  Object.assign(order, { side: 'BUY', qty: 5 });
+  const k = { expiry: 1, kind: order.kind, strike: order.strike };
+  submitQuotes(g, alice.id, [{ ...k, askPx: 10, askQty: 2 }]);
+  submitQuotes(g, bob.id, [{ ...k, askPx: 14, askQty: 4 }]);
+  confirmQuotes(g, alice.id);
+  confirmQuotes(g, bob.id);
+  assert.equal(g.options.marks[contractKey(k)], 14);
 });
 
 test('passing is a confirm with no quotes, and the round still completes', () => {
