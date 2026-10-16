@@ -1164,3 +1164,7 @@ tbody tr.exercised td:first-child { box-shadow: inset 2px 0 0 var(--cyan); }
 /* A footer row on the by-contract table, same register as the montage's. */
 .o-detail-cap + .scroll-x tr.o-foot td { border-top: 1px solid var(--ring-hi); background: rgba(255, 255, 255, 0.025); }
 .o-tape td .tiny { line-height: 1.2; }
+
+/* The 0DTE row of the picker: the same chips, one step quieter. */
+.o-zero { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); }
+.o-zero .o-chip.on, .o-zero .o-chip.on:hover:not(:disabled) { background: var(--cyan); border-color: var(--cyan); color: #04202c; }

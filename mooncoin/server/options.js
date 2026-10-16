@@ -70,6 +70,13 @@ export const OPTION_DEFAULTS = {
   // no auction at all.
   fixedExpiries: null,
 
+  // Expiries that are listed only in the round they expire — the game's 0DTE.
+  // An R2 contract here does not exist during R1; it appears when R2 opens and
+  // is a pure bet on that round's dice. Everything not in this list is listed
+  // from the first round. A subset of the picked expiries; anything else in it
+  // is ignored.
+  zeroDay: [],
+
   // §10.1 — resolved: a market order with no quotes on the required side dies.
   unfilledMarketOrder: 'drop',
 
@@ -140,12 +147,16 @@ export function fixedExpiriesFor(maxRounds, cfg = OPTION_DEFAULTS) {
  * skips the auction and goes straight to the stock.
  */
 export function expiryTables(round, maxRounds, cfg = OPTION_DEFAULTS) {
+  const zero = new Set(cfg.zeroDay ?? OPTION_DEFAULTS.zeroDay);
   return fixedExpiriesFor(maxRounds, cfg)
     .filter((e) => e >= round)
+    // A day-of expiry is not on the board until its own round opens.
+    .filter((e) => !zero.has(e) || e === round)
     .map((e) => ({
       key: `r${e}`, expiry: e,
-      label: e === round ? 'This round' : `Round ${e}`,
+      label: e === round ? (zero.has(e) ? 'This round · 0DTE' : 'This round') : `Round ${e}`,
       current: e === round,
+      zeroDay: zero.has(e),
     }));
 }
 

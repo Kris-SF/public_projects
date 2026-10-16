@@ -119,6 +119,34 @@ test('nothing expires that the host did not pick', () => {
     'options on, nothing picked: nothing to auction');
 });
 
+test('a 0DTE expiry is listed only in the round it expires', () => {
+  const cfg = { ...OPTION_DEFAULTS, fixedExpiries: [2, 5], zeroDay: [2] };
+  const at = (r) => expiryTables(r, 5, cfg).map((t) => t.expiry);
+  assert.deepEqual(at(1), [5], 'R2 does not exist yet during R1');
+  assert.deepEqual(at(2), [2, 5], 'it appears when R2 opens');
+  assert.equal(expiryTables(2, 5, cfg)[0].label, 'This round · 0DTE');
+  assert.equal(expiryTables(2, 5, cfg)[0].zeroDay, true);
+  assert.equal(expiryTables(2, 5, cfg)[1].zeroDay, false);
+  assert.deepEqual(at(3), [5], 'and is gone after');
+  // A 0DTE entry that is not a picked expiry changes nothing.
+  assert.deepEqual(expiryTables(1, 5, { ...OPTION_DEFAULTS, fixedExpiries: [5], zeroDay: [3] })
+    .map((t) => t.expiry), [5]);
+});
+
+test('a 0DTE round runs its auction when it opens, and not before', () => {
+  const g = twoSeats({ fixedExpiries: [2], zeroDay: [2] });
+  assert.equal(g.phase, 'orders', 'R1: nothing listed, straight to the stock');
+  assert.deepEqual(publicState(g).optionBoard.tables, []);
+  assert.deepEqual(publicState(g).zeroDay, [2]);
+  clearStock(g);
+  for (const p of g.players) confirmCards(g, p.id);
+  for (const d of [5, 1, 6, 6]) lockRoll(g, Math.random, d);
+  assert.equal(g.round, 2);
+  assert.equal(g.phase, 'auction', 'R2: the day-of table is on the block');
+  assert.equal(g.options.activeExpiry, 2);
+  assert.ok(g.options.orders.length > 0, 'with house orders on it');
+});
+
 test('the derived expiries scale with the game length', () => {
   assert.deepEqual(expiryTables(1, 10, T3).map((t) => t.expiry), [1, 5, 10]);
   assert.deepEqual(expiryTables(1, 3, T3).map((t) => t.expiry), [1, 2, 3]);

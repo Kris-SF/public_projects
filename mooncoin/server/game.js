@@ -731,12 +731,14 @@ export function updateConfig(game, patch) {
   // derived default, so it has to survive as an empty array rather than null.
   // An explicit pick survives as an explicit pick, pruned to the game length —
   // shortening the game must not leave an expiry hanging past the last round.
+  const rounds = (xs) => [...new Set(xs)]
+    .map((e) => Math.trunc(Number(e)))
+    .filter((e) => Number.isInteger(e) && e >= 1 && e <= next.maxRounds)
+    .sort((a, b) => a - b);
   if (Array.isArray(next.optionRules.fixedExpiries)) {
-    next.optionRules.fixedExpiries = [...new Set(next.optionRules.fixedExpiries)]
-      .map((e) => Math.trunc(Number(e)))
-      .filter((e) => Number.isInteger(e) && e >= 1 && e <= next.maxRounds)
-      .sort((a, b) => a - b);
+    next.optionRules.fixedExpiries = rounds(next.optionRules.fixedExpiries);
   }
+  next.optionRules.zeroDay = rounds(next.optionRules.zeroDay ?? []);
   if (game.players.length * next.cardQty > 100) {
     throw new Error(`${game.players.length} players x ${next.cardQty} cards exceeds the 100-card deck`);
   }
@@ -836,6 +838,8 @@ export function publicState(game) {
     // The effective set, so the lobby shows what is actually selected rather
     // than what was typed.
     expiries: fixedExpiriesFor(game.config.maxRounds, game.config.optionRules),
+    zeroDay: (game.config.optionRules.zeroDay ?? [])
+      .filter((e) => fixedExpiriesFor(game.config.maxRounds, game.config.optionRules).includes(e)),
     mark: game.mark,
     openingPrice: game.config.openingPrice,
     // The options board is public in full. Between indicate and reveal a house
