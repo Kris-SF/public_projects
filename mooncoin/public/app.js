@@ -936,6 +936,14 @@ function wireHost(st, joinUrl) {
       act.config({ optionRules: { fixedExpiries: [...now] } });
     };
   });
+  document.querySelectorAll('[data-zero]').forEach((b) => {
+    b.onclick = () => {
+      const r = Number(b.dataset.zero);
+      const now = new Set(st.zeroDay ?? []);
+      now.has(r) ? now.delete(r) : now.add(r);
+      act.config({ optionRules: { zeroDay: [...now] } });
+    };
+  });
 
   // The chips are drawn from the game length, so it has to commit as it is
   // typed rather than waiting for the market to open.
@@ -1352,12 +1360,17 @@ function expiryPicker(st) {
     chips.push(`<button class="o-chip ${picked.has(r) ? 'on' : ''}" data-expiry="${r}">R${r}</button>`);
   }
 
+  // Day-of listings: a picked expiry that only appears in its own round.
+  const zero = new Set(st.zeroDay ?? []);
+  const zeroChips = [...picked].sort((a, b) => a - b).map((r) =>
+    `<button class="o-chip ${zero.has(r) ? 'on' : ''}" data-zero="${r}">R${r}</button>`);
+
   // How many auction gates each round will actually carry. That is the cost of
   // a pick, and it is the thing that decides whether a round drags.
   const gates = [];
   let worst = 0;
   for (let r = 1; r <= st.maxRounds; r++) {
-    const n = [...picked].filter((e) => e >= r).length;
+    const n = [...picked].filter((e) => e >= r && (!zero.has(e) || e === r)).length;
     worst = Math.max(worst, n);
     gates.push(`<span class="o-gate ${n ? '' : 'none'}"><i>R${r}</i>${n}</span>`);
   }
@@ -1366,6 +1379,13 @@ function expiryPicker(st) {
     <div>
       <span class="n-lab">Expiries — which rounds settle options</span>
       <div class="o-chips">${chips.join('')}</div>
+      ${picked.size ? `
+        <div class="o-zero">
+          <span class="n-lab">Listed only in its own round (0DTE)</span>
+          <div class="o-chips">${zeroChips.join('')}</div>
+          <p class="n-note">Everything else is on the board from round one. A 0DTE
+            expiry appears when its round opens — one auction, one dice roll.</p>
+        </div>` : ''}
       <div class="o-plan">
         <span class="n-lab">Auction gates per round</span>
         <div class="o-gates">${gates.join('')}</div>

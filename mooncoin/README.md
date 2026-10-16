@@ -150,7 +150,9 @@ Four things in the sheet were broken or unbuilt rather than intended:
 
 Off by default; the host turns them on in the lobby and picks which rounds carry
 an expiry — only those rounds settle anything, and a round the host did not pick
-runs no auction. The game never quotes an option price — there is no model, no
+runs no auction. Any picked expiry can be marked **0DTE**: it is then listed only
+in the round it expires, appearing when that round opens — one auction, one
+dice roll — instead of trading from round one. The game never quotes an option price — there is no model, no
 lookup, no fair value anywhere in the code. Every price comes out of the auction.
 
 Each live expiry shows nine strikes at $5 spacing, re-anchored to the current
