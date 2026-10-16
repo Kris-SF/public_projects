@@ -830,7 +830,7 @@ test('every option fill is on the tape, by name, and survives the round', () => 
   assert.deepEqual(publicState(g).optionTrades, [], 'a new round, a blank tape');
 });
 
-test('the wall shows every player\'s net option book, quantities only', () => {
+test('the wall shows open interest, not anyone\'s book', () => {
   const g = twoSeats({ fixedExpiries: [1], orderCoverage: 'all' });
   const [alice, bob] = g.players;
   const c = { expiry: 1, kind: 'call', strike: 100 };
@@ -839,14 +839,35 @@ test('the wall shows every player\'s net option book, quantities only', () => {
   confirmQuotes(g, alice.id);
   confirmQuotes(g, bob.id);
 
-  const rows = publicState(g).standings;
-  const a = rows.find((r) => r.name === 'ALICE'), b = rows.find((r) => r.name === 'BOB');
-  assert.ok(a.optionBook.every((x) => x.qty < 0), 'alice is short what she sold');
-  assert.ok(b.optionBook.every((x) => x.qty > 0), 'bob is long what he bought');
-  for (const x of [...a.optionBook, ...b.optionBook]) {
-    assert.deepEqual(Object.keys(x).sort(), ['expiry', 'kind', 'qty', 'strike'], 'no premium, no P/L');
+  const pub = publicState(g);
+  assert.ok(pub.standings.every((r) => !('optionBook' in r)), 'no positions on the wall');
+  assert.ok(pub.openInterest.length > 0);
+
+  // Outstanding contracts = half of everyone's absolute position, house included.
+  for (const oi of pub.openInterest) {
+    const nets = g.players.map((p) => p.optionPositions
+      .filter((x) => x.expiry === oi.expiry && x.kind === oi.kind && x.strike === oi.strike)
+      .reduce((a, x) => a + x.qty, 0));
+    const abs = nets.reduce((a, n) => a + Math.abs(n), 0);
+    const net = nets.reduce((a, n) => a + n, 0);
+    assert.equal(oi.qty, (abs + Math.abs(net)) / 2, `${oi.strike} ${oi.kind}`);
+    assert.ok(Number.isInteger(oi.qty) && oi.qty > 0, 'a whole, positive count');
   }
-  assert.equal('optionBook' in createGame('X', {}).players, false);
+});
+
+test('open interest counts the house as the other side', () => {
+  // Only Alice trades, and only with the house: two contracts are open.
+  const g = twoSeats({ fixedExpiries: [1], orderCoverage: 'all' });
+  const [alice, bob] = g.players;
+  const order = g.options.orders.find((o) => o.expiry === 1);
+  order.side = 'BUY';   // make the house a buyer here, whatever the dice said
+  submitQuotes(g, alice.id, [{ expiry: 1, kind: order.kind, strike: order.strike, askPx: 1, askQty: 2 }]);
+  confirmQuotes(g, alice.id);
+  confirmQuotes(g, bob.id);
+  const oi = publicState(g).openInterest.find((r) => r.kind === order.kind && r.strike === order.strike);
+  const sold = -alice.optionPositions.reduce((a, x) => a + x.qty, 0);
+  assert.ok(sold > 0, 'the house lifted her');
+  assert.equal(oi.qty, sold, 'what she sold is what is open, even with no player on the other side');
 });
 
 test('quotes are refused for the wrong expiry or a strike off the board', () => {
@@ -1048,6 +1069,54 @@ test('a later expiry is untouched by an earlier settlement', () => {
   assert.ok(after.length > 0 && after.every((x) => x.expiry === 5),
     'R1 settled, R5 still open');
   assert.equal(g.round, 2, 'and the game moved on');
+});
+
+test('an expiry reports its P/L against the mark it was carried at', () => {
+  const g = twoSeats({ fixedExpiries: [1], orderCoverage: 'all' });
+  const [alice, bob] = g.players;
+  const c = { expiry: 1, kind: 'call', strike: 105 };
+  // Pin the house: a buyer of one, so it lifts Alice and she is the short.
+  Object.assign(g.options.orders.find((o) => o.expiry === 1 && o.kind === 'call' && o.strike === 105),
+    { side: 'BUY', qty: 1 });
+  submitQuotes(g, alice.id, [{ ...c, askPx: 6, askQty: 1 }]);
+  submitQuotes(g, bob.id, [{ ...c, bidPx: 6, bidQty: 1 }]);
+  confirmQuotes(g, alice.id);
+  confirmQuotes(g, bob.id);
+  const key = contractKey(c);
+  const mark = g.options.marks[key];
+  assert.equal(mark, 6, 'carried at the clearing price');
+  const short = g.players.find((p) => p.optionPositions.some((x) => x.strike === 105 && x.qty < 0));
+  const qty = short.optionPositions.filter((x) => x.strike === 105).reduce((a, x) => a + x.qty, 0);
+
+  // Trend 5 → up, ADD, 3 and 3: the mark goes to 106, the call is in by 1.
+  finishRound(g, [5, 1, 3, 3]);
+  assert.equal(g.mark, 106);
+  const row = short.settledOptions.find((x) => x.strike === 105);
+  assert.equal(row.priorMark, 6);
+  assert.equal(row.plFromMark, (1 - 6) * qty, 'short from a mark of 6, expiring worth 1: +5 a contract');
+  assert.equal(row.plAllIn, (1 - 6) * qty, 'sold at 6 as well, so the same here');
+  const hist = g.history[0].expired.find((x) => x.name === short.name && x.strike === 105);
+  assert.equal(hist.plFromMark, row.plFromMark, 'and the round records it');
+});
+
+test('every holder of a contract sees the same prior mark, not the first settler\'s intrinsic', () => {
+  const g = twoSeats({ fixedExpiries: [1], orderCoverage: 'all' });
+  const [alice, bob] = g.players;
+  const c = { expiry: 1, kind: 'call', strike: 95 };
+  // Pin the house to buying one: it takes one of Alice's two, and Bob crosses
+  // the other, so both players end up holding the contract.
+  Object.assign(g.options.orders.find((o) => o.expiry === 1 && o.kind === 'call' && o.strike === 95),
+    { side: 'BUY', qty: 1 });
+  submitQuotes(g, alice.id, [{ ...c, askPx: 8, askQty: 2 }]);
+  submitQuotes(g, bob.id, [{ ...c, bidPx: 8, bidQty: 2 }]);
+  confirmQuotes(g, alice.id);
+  confirmQuotes(g, bob.id);
+  const mark = g.options.marks[contractKey(c)];
+  assert.equal(mark, 8);
+  finishRound(g, [5, 1, 3, 3]);   // 106: the 95 call is in by 11
+  const rows = g.players.flatMap((p) => p.settledOptions.filter((x) => x.strike === 95));
+  assert.ok(rows.length >= 2, 'both sides held it');
+  for (const r of rows) assert.equal(r.priorMark, 8, 'carried at 8 for everyone');
 });
 
 test('the settled round records what expired and what was delivered', () => {
