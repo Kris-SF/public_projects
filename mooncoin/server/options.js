@@ -479,11 +479,23 @@ export function intrinsic(kind, strike, price) {
  * moment the auction skipped its strike, which is an artefact of the auction
  * schedule rather than anything that happened in the market.
  */
-export function optionPL(positions, marks = new Map()) {
+export function optionPL(positions, marks = new Map(), price = null) {
   return positions.reduce((a, p) => {
-    const mark = marks.get(contractKey(p)) ?? p.premium;
+    const mark = markedAt(p, marks, price);
     return a + (mark - p.premium) * p.qty;
   }, 0);
+}
+
+/**
+ * What a position is carried at: its last sale, or its own premium if nothing
+ * has cleared since — and, given the coin's price, never less than the contract
+ * is already in the money by. A $100 call with the coin at $124 cannot
+ * reasonably be marked below $24 whatever it last traded at; the floor is the
+ * one thing about an option's value that is arithmetic rather than opinion.
+ */
+export function markedAt(p, marks = new Map(), price = null) {
+  const last = marks.get(contractKey(p)) ?? p.premium;
+  return price === null ? last : Math.max(last, intrinsic(p.kind, p.strike, price));
 }
 
 /**

@@ -1524,27 +1524,30 @@ function optionBlotter(me, st) {
       // in its price — it is trading at parity or a discount to it — and
       // letting that go negative would turn a measure of time premium into a
       // measure of how stale the mark is.
+      // The board's marks already carry the intrinsic floor; a contract with no
+      // sale is carried at its premium, floored the same way, so a position the
+      // auction never priced still shows what it is plainly worth.
       const lines = rows.map((r) => {
         const avg = r.cost / r.qty;
         const mk = marks[optKey(r)];
-        const carried = mk === undefined ? avg : mk;
         const inThe = r.kind === 'call' ? Math.max(0, st.mark - r.strike) : Math.max(0, r.strike - st.mark);
+        const carried = Math.max(mk === undefined ? avg : mk, inThe);
         const time = Math.max(0, carried - inThe) * r.qty;
-        const pl = mk === undefined ? 0 : (mk - avg) * r.qty;
-        return { r, avg, mk, time, pl };
+        const pl = (carried - avg) * r.qty;
+        return { r, avg, mk: carried, unmarked: mk === undefined && carried === avg, time, pl };
       });
       const netTime = lines.reduce((a, l) => a + l.time, 0);
       const netPl = lines.reduce((a, l) => a + l.pl, 0);
       return `<div class="o-detail-cap">By contract</div><div class="scroll-x"><table>
       <thead><tr><th>Contract</th><th class="num">Qty</th><th class="num">Avg</th>
         <th class="num">Mark</th><th class="num">Time</th><th class="num">P/L</th></tr></thead>
-      <tbody>${lines.map(({ r, avg, mk, time, pl }) => `<tr>
+      <tbody>${lines.map(({ r, avg, mk, unmarked, time, pl }) => `<tr>
           <td class="o-contract">${contractTag(r)}</td>
           <td class="num ${cls(r.qty)}">${signed(r.qty)}</td>
           <td class="num dim"><span class="o-cur">$</span>${px(avg)}</td>
-          <td class="num">${mk === undefined ? '<span class="o-none">—</span>' : `<span class="o-cur">$</span>${mk}`}</td>
+          <td class="num">${unmarked ? '<span class="o-none">—</span>' : `<span class="o-cur">$</span>${mk}`}</td>
           <td class="num ${cls(time)}">${moneyHTML(time)}</td>
-          <td class="num strong ${cls(pl)}">${mk === undefined ? '<span class="o-none">—</span>' : moneyHTML(pl)}</td>
+          <td class="num strong ${cls(pl)}">${unmarked ? '<span class="o-none">—</span>' : moneyHTML(pl)}</td>
         </tr>`).join('')}
         <tr class="o-foot"><td class="dim">net</td><td></td><td></td><td></td>
           <td class="num strong ${cls(netTime)}">${moneyHTML(netTime)}</td>

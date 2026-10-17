@@ -462,13 +462,15 @@ export function tripAuctionGate(game) {
  * come off the option book, so that premium has to be kept somewhere that
  * outlives them, or a score would quietly unwind every time a contract expired.
  */
-function settleOptions(game) {
+function settleOptions(game, priorCoinMark) {
   if (!game.options) return [];
 
   // Snapshot the marks before anyone settles: the first player through sets a
   // contract's mark to intrinsic, and the second holder of the same contract
-  // would otherwise read that back as the mark they were carrying.
-  const priorMarks = { ...game.options.marks };
+  // would otherwise read that back as the mark they were carrying. Floored at
+  // intrinsic against the coin's mark going into the dice, which is what the
+  // table was looking at.
+  const priorMarks = effectiveMarks(game, priorCoinMark);
 
   const settledRows = [];
   for (const p of game.players) {
@@ -484,7 +486,8 @@ function settleOptions(game) {
       // auction price, or the premium when nothing has cleared since. The
       // expiry's P/L against that is what the round did to you; against the
       // premium is what the whole trade did.
-      const priorMark = priorMarks[contractKey(s)] ?? s.cost / s.qty;
+      const priorMark = priorMarks[contractKey(s)]
+        ?? Math.max(s.cost / s.qty, intrinsic(s.kind, s.strike, priorCoinMark));
       s.priorMark = priorMark;
       s.plFromMark = (s.intrinsic - priorMark) * s.qty;
       s.plAllIn = s.intrinsic * s.qty - s.cost;
@@ -656,7 +659,7 @@ function settleRound(game) {
   logLine(game, `Round ${game.round} settled ${fmtSigned(chg)} to ${game.mark} (${type})`);
 
   // Options struck for this round expire against the mark the dice just set.
-  const expired = settleOptions(game);
+  const expired = settleOptions(game, priorMark);
   const h = game.history[game.history.length - 1];
   if (expired.length) h.expired = expired;
   // This round's option fills go into the record with it, so the tape reads
@@ -769,11 +772,28 @@ export function playerById(game, id) {
  * Options mark against the last price the auction discovered; a contract the
  * auction has not priced is carried flat rather than at an invented value.
  */
+/**
+ * The marks as the table sees them: each contract's last sale, floored at what
+ * it is in the money by against the coin's current mark. Only for contracts
+ * still alive — an expired one was marked at its final intrinsic when it
+ * settled, and the coin moving afterwards has nothing to do with it.
+ */
+function effectiveMarks(game, coinMark = game.mark) {
+  const out = {};
+  for (const [key, last] of Object.entries(game.options.marks)) {
+    const [expiry, kind, strike] = key.split('|');
+    out[key] = Number(expiry) >= game.round
+      ? Math.max(last, intrinsic(kind, Number(strike), coinMark))
+      : last;
+  }
+  return out;
+}
+
 function withOptions(game, p) {
   const stock = position(p.fills, game.mark);
   if (!game.options) return stock;
   const marks = new Map(Object.entries(game.options.marks));
-  const open = optionPL(p.optionPositions ?? [], marks);
+  const open = optionPL(p.optionPositions ?? [], marks, game.mark);
   const options = open + (p.realizedOptionPl ?? 0);
   return { ...stock, stockPl: stock.pl, optionPl: options, pl: stock.pl + options };
 }
@@ -851,7 +871,7 @@ export function publicState(game) {
       tables: expiryTables(game.round, game.config.maxRounds, game.config.optionRules)
         .map((t) => ({ ...t, strikes: strikeGrid(game.mark, game.config.optionRules) })),
       orders: game.options.orders,
-      marks: game.options.marks,
+      marks: effectiveMarks(game),
       // Only contracts carrying a house order can clear — the auction runs one
       // order at a time — so this is exactly the set worth quoting.
       quotable: game.options.activeExpiry === null ? [] :
