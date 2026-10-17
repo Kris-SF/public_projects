@@ -315,8 +315,8 @@ function openAuction(game, index, rng = Math.random) {
     game.phase = 'orders';
     // A round with nothing left to expire has no auction to close.
     logLine(game, tables.length
-      ? 'Auction closed — the stock is open'
-      : 'No expiries ahead — straight to the stock');
+      ? 'Auction closed — the future is open'
+      : 'No expiries ahead — straight to the future');
     runBots(game, rng);
     return;
   }

@@ -82,9 +82,9 @@ function labRound() {
     const says = $('r-says');
     if (pressure === 0) {
       says.innerHTML = mb === 0
-        ? 'Nobody demanded anything. Nothing trades and the coin stays put.'
+        ? 'Nobody demanded anything. Nothing trades and the future stays put.'
         : `<b>${mb}</b> bought and <b>${ms}</b> sold at market — they cancelled each other out exactly. `
-          + 'The coin does not move, however large those numbers get.';
+          + 'The future does not move, however large those numbers get.';
     } else if (imbalance === 0) {
       says.innerHTML = `Pressure of <b>${signed(pressure)}</b>, and the resting book absorbed `
         + `<b>all ${absorbed}</b> of it. A liquid market: the volume went through at the old price.`;
@@ -126,7 +126,7 @@ function labImpact() {
     <line class="ax" x1="${L}" y1="${T}" x2="${L}" y2="${H - B}"/>
     <line class="ax" x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}"/>
     <text class="al x" x="${(L + W - R) / 2}" y="${H - 3}" text-anchor="middle">IMBALANCE</text>
-    <text class="al" x="${L}" y="${T - 2}">THE COIN MOVES</text>
+    <text class="al" x="${L}" y="${T - 2}">THE FUTURE MOVES</text>
     <path class="curve" d="${d}"/>
     <line id="imp-rule" class="zero" x1="0" y1="${T}" x2="0" y2="${H - B}"/>
     <circle id="imp-dot" class="dot" r="6" cx="0" cy="0"/>`;
@@ -143,13 +143,13 @@ function labImpact() {
 
     const says = $('i-says');
     if (i === 0) {
-      says.innerHTML = 'Perfectly matched. The coin prints exactly where it closed yesterday.';
+      says.innerHTML = 'Perfectly matched. The future prints exactly where it closed yesterday.';
     } else {
-      // Cents per coin, not dollars — getting this factor wrong is an easy way
+      // Cents per contract, not dollars — getting this factor wrong is an easy way
       // to overstate the cost of size by a hundred.
       const cents = Math.round((slip / i) * 100);
-      says.innerHTML = `<b>${i}</b> coin${i === 1 ? '' : 's'} of unmatched demand move${i === 1 ? 's' : ''} `
-        + `the price <b>$${slip}</b> — about <b>${cents}&cent;</b> per coin.`
+      says.innerHTML = `<b>${i}</b> contract${i === 1 ? '' : 's'} of unmatched demand move${i === 1 ? 's' : ''} `
+        + `the price <b>$${slip}</b> — about <b>${cents}&cent;</b> per contract.`
         + (i >= 16 ? ' Barely anything. Size is close to free out here.' : '');
     }
   };
@@ -192,7 +192,7 @@ function labDice() {
       + `<b class="${trend > 0 ? 'up' : 'down'}">${trend > 0 ? 'UP' : 'DOWN'}</b>. `
       + `Size is <b>${a} ${type === 'MULTIPLY' ? '×' : '+'} ${b} = ${type === 'MULTIPLY' ? a * b : a + b}</b>, `
       + `because the volatility die said <b class="${type === 'MULTIPLY' ? 'cyan' : 'dim'}">${type === 'MULTIPLY' ? 'big move' : 'small move'}</b>. `
-      + `The coin closes at <b>${OPENING + chg}</b>.`;
+      + `The future closes at <b>${OPENING + chg}</b>.`;
   };
 
   ['d-trend', 'd-d1', 'd-d2', 'd-a', 'd-b'].forEach((id) => $(id).addEventListener('input', draw));
@@ -247,7 +247,7 @@ function labExpiry() {
       <line class="zero" x1="${L}" y1="${y(0)}" x2="${W - R}" y2="${y(0)}"/>
       <line class="gl" x1="${x(STRIKE)}" y1="${T}" x2="${x(STRIKE)}" y2="${H - B}"/>
       <text class="al" x="${x(STRIKE) + 6}" y="${T + 9}">STRIKE</text>
-      <text class="al x" x="${(L + W - R) / 2}" y="${H - 3}" text-anchor="middle">WHERE THE COIN CLOSED</text>
+      <text class="al x" x="${(L + W - R) / 2}" y="${H - 3}" text-anchor="middle">WHERE THE FUTURE CLOSED</text>
       <text class="al" x="${L}" y="${T - 4}">YOUR P/L</text>
       <path class="payoff" d="${line}"/>
       <line class="zero" x1="${x(px).toFixed(1)}" y1="${T}" x2="${x(px).toFixed(1)}" y2="${H - B}"/>
@@ -262,7 +262,7 @@ function labExpiry() {
       says.innerHTML = worth === 0
         ? `Closed <b>below ${STRIKE}</b>, so the call expires. You lose the `
           + `<b>${PREMIUM}</b> you paid — <b>and that is the floor</b>, however far it falls.`
-        : `You take <b>one coin at ${STRIKE}</b>, now worth ${px}: <b>${worth}</b> to the good, `
+        : `You take <b>one future at ${STRIKE}</b>, now worth ${px}: <b>${worth}</b> to the good, `
           + `less the <b>${PREMIUM}</b> you paid. `
           + (pl === 0 ? '<b>Exactly break-even</b> — this is the line.' : pl > 0
             ? 'Past break-even, and from here <b>there is no ceiling</b>.'
@@ -271,7 +271,7 @@ function labExpiry() {
       says.innerHTML = worth === 0
         ? `Expired worthless. You <b>keep the whole ${PREMIUM}</b> — and that is the most you `
           + 'can ever make on this trade.'
-        : `You deliver <b>one coin at ${STRIKE}</b> that is worth ${px} — <b>${worth}</b> `
+        : `You deliver <b>one future at ${STRIKE}</b> that is worth ${px} — <b>${worth}</b> `
           + `against you — having collected <b>${PREMIUM}</b>. `
           + (pl >= 0 ? 'Still ahead, just.' : '<b>And this loss has no floor.</b> Every dollar higher costs you another.');
     }
