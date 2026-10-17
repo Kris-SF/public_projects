@@ -644,9 +644,6 @@ function settleRound(game) {
     absorbed: game.reveal.absorbed,
     print: game.reveal.price,
     houseResidual: game.reveal.houseResidual,
-    // Who did what in the stock, by name, so the wall can show the futures
-    // prints round by round the way it shows the option fills.
-    orders: game.reveal.orders.map(({ name, qty, type, filled }) => ({ name, qty, type, filled })),
     regime: game.net.regime,
     cards: game.net.cards,
     plays: game.net.plays,
