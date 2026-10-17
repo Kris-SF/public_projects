@@ -869,7 +869,7 @@ function blotter(me) {
       <span class="up">Positive</span> is edge — you rested and the print came to you.
       <span class="down">Negative</span> is slippage — you crossed and paid for it.
       Measured against the mark the round opened on.
-      ${me.fills.some((f) => f.exercise) ? '<b>Via</b> is stock an option delivered at its strike.' : ''}
+      ${me.fills.some((f) => f.exercise) ? '<b>Via</b> is the future an option delivered at its strike.' : ''}
     </div>`;
 }
 
@@ -1397,9 +1397,9 @@ function expiryPicker(st) {
       </div>
       <p class="n-note">${picked.size === 0
         ? 'Nothing picked: options are on but nothing ever expires, so no auction runs.'
-        : `Every live expiry is its own gate before the stock opens, so your longest round
+        : `Every live expiry is its own gate before the future opens, so your longest round
            runs ${worst} auction gate${worst === 1 ? '' : 's'}. A round with no expiry ahead
-           skips straight to the stock.`}</p>
+           skips straight to the future.`}</p>
     </div>`;
 }
 
@@ -1860,12 +1860,12 @@ function renderDashboard(hostMode = false, fromSeat = false) {
                 <div>
                   <span class="n-lab">Options</span>
                   <div class="n-seg mode o-toggle">
-                    <button id="cfgOptionsOff" class="${st.options ? '' : 'on'}">Stock only</button>
+                    <button id="cfgOptionsOff" class="${st.options ? '' : 'on'}">Future only</button>
                     <button id="cfgOptionsOn" class="${st.options ? 'on' : ''}">Options</button>
                   </div>
                 </div>
                 ${st.options ? expiryPicker(st) : `
-                  <p class="n-note">The stock game, exactly as it plays today.</p>`}
+                  <p class="n-note">The futures game, exactly as it plays today.</p>`}
                 <button class="primary n-go" id="start" ${st.seated < 1 ? 'disabled' : ''}>
                   ${st.seated < 1 ? 'Waiting for players' : `Open the market (${st.seated} seated)`}
                 </button>

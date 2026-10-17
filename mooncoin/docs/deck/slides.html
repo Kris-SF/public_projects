@@ -3,7 +3,7 @@
   <div class="brand">Market&nbsp;Maker</div>
   <div class="by">by moontower</div>
   <div class="line"></div>
-  <p class="what">A market in a coin that does not exist. <b>You and the people at
+  <p class="what">A market in a future that does not exist. <b>You and the people at
     the table set its price</b> — and then four dice decide what it was worth.</p>
   <p class="nav">Use <kbd>→</kbd> to move, <kbd>Esc</kbd> for the whole deck,
     <kbd>S</kbd> for notes. Four slides have <b>sliders you can drag</b>.</p>
@@ -19,7 +19,7 @@
   <div class="body">
     <div class="cards">
       <div class="card">
-        <div class="cap">One coin</div>
+        <div class="cap">One future</div>
         <div class="big ind">{{opening}}</div>
         <p class="says">It opens at a price the host sets — <b>{{opening}}</b>
           by default — and moves every round. There is nothing else to trade.</p>
@@ -34,7 +34,7 @@
         <div class="cap">One score</div>
         <div class="big up">P/L</div>
         <p class="says">Profit and loss is the only number kept.
-          <b>Every round it is recomputed from scratch</b> against where the coin closed.</p>
+          <b>Every round it is recomputed from scratch</b> against where the future closed.</p>
       </div>
     </div>
     <p class="note">Because cash is infinite, size is free and only being <em>wrong</em>
@@ -62,35 +62,35 @@
       <div class="beat">
         <div class="n">2</div>
         <div>
-          <div class="t">Stock orders</div>
-          <div class="d">How many coins you want, and whether you want them now or only at today's price.</div>
+          <div class="t">Futures orders</div>
+          <div class="d">How many futures you want, and whether you want them now or only at today's price.</div>
         </div>
       </div>
       <div class="beat">
         <div class="n">3</div>
         <div>
           <div class="t">Cards</div>
-          <div class="d">Everyone secretly plays cards that push the coin up, down, or wilder.</div>
+          <div class="d">Everyone secretly plays cards that push the future up, down, or wilder.</div>
         </div>
       </div>
       <div class="beat">
         <div class="n">4</div>
         <div>
           <div class="t">Four dice</div>
-          <div class="d">Thrown one at a time. They decide which way the coin went and how far.</div>
+          <div class="d">Thrown one at a time. They decide which way the future went and how far.</div>
         </div>
       </div>
       <div class="beat">
         <div class="n">5</div>
         <div>
           <div class="t">Settle</div>
-          <div class="d">The coin lands on a new price. Everyone's P/L is restated against it.</div>
+          <div class="d">The future lands on a new price. Everyone's P/L is restated against it.</div>
         </div>
       </div>
     </div>
     <p class="note fragment fade-up"><b>Why options first?</b> Because an option you were
-      just handed is a risk you may want to offset by trading the coin itself — and the
-      coin trades in beat 2, in the same round. Run stock first and every hedge arrives
+      just handed is a risk you may want to offset by trading the future itself — and the
+      future trades in beat 2, in the same round. Run futures first and every hedge arrives
       a round too late, after the dice have already settled the thing you were hedging.</p>
   </div>
   <aside class="notes">Each beat is a gate: the round does not advance until everyone
@@ -108,8 +108,8 @@
         <div class="cap">The print</div>
         <div class="big cyan">{{round.price}}</div>
         <p class="says"><b>Where you traded.</b> Set in beat 2 by what the table
-          asked for. If more people demanded coins than offered them, the print is
-          above where the coin was.</p>
+          asked for. If more people demanded futures than offered them, the print is
+          above where the future was.</p>
       </div>
       <div class="card raised">
         <div class="cap">The mark</div>
@@ -131,7 +131,7 @@
 
 <!-- 5 ────────────────────────────────────────────── MAKING THE PRINT ───── -->
 <section>
-  <p class="eyebrow">Beat 2 · stock orders</p>
+  <p class="eyebrow">Beat 2 · futures orders</p>
   <h2>Your orders make the print</h2>
   <div class="body">
     <div class="two wide">
@@ -167,7 +167,7 @@
         </div>
       </div>
     </div>
-    <p class="note">If every buyer is matched by a seller the coin prints exactly where
+    <p class="note">If every buyer is matched by a seller the future prints exactly where
       it was, <em>no matter how much volume went through</em>. And a limit order on the
       same side as the pressure does not trade at all — nobody is selling at yesterday's
       price into a rush of buyers.</p>
@@ -244,7 +244,7 @@
         </div>
       </div>
       <div class="readout">
-        <div class="cap">The coin moves</div>
+        <div class="cap">The future moves</div>
         <div class="big cyan" id="i-slip">${{impact[4].slip}}</div>
         <p class="says" id="i-says"></p>
         <p class="says faint" style="margin-top:14px">Compare:
@@ -256,7 +256,7 @@
     </div>
     <p class="note">The move is the square root of the imbalance, <b>rounded up</b> — which is
       why the line climbs in steps rather than smoothly. So the
-      first coin you demand is expensive and the fiftieth is nearly free. <em>Size is
+      first contract you demand is expensive and the fiftieth is nearly free. <em>Size is
       cheap in this market</em> — which is exactly why being on the wrong side of the
       dice with a lot of it is what ruins a round.</p>
   </div>
@@ -274,12 +274,12 @@
       <div class="pc u">
         <div class="g">↑</div>
         <div class="nm">Up</div>
-        <div class="d">Leans the coin <b>upward</b>. Pushes the trend die.</div>
+        <div class="d">Leans the future <b>upward</b>. Pushes the trend die.</div>
       </div>
       <div class="pc d2">
         <div class="g">↓</div>
         <div class="nm">Down</div>
-        <div class="d">Leans the coin <b>downward</b>. Pushes the trend die the other way.</div>
+        <div class="d">Leans the future <b>downward</b>. Pushes the trend die the other way.</div>
       </div>
       <div class="pc m">
         <div class="g">×</div>
@@ -341,7 +341,7 @@
       <div class="k">direction</div><div class="v up">up</div><div class="why">{{dice.roll[0]}} plus the card cleared the bar of 3</div>
       <div class="k">size</div><div class="v cyan">{{dice.roll[2]}} × {{dice.roll[3]}} = {{dice.roll[2] * dice.roll[3]}}</div><div class="why">the volatility die said multiply, not add</div>
       <div class="hr"></div>
-      <div class="k">the coin closes at</div><div class="v tot">{{dice.mark}}</div><div class="why">{{opening}} {{dice.chg > 0 ? "+" : ""}}{{dice.chg}}</div>
+      <div class="k">the future closes at</div><div class="v tot">{{dice.mark}}</div><div class="why">{{opening}} {{dice.chg > 0 ? "+" : ""}}{{dice.chg}}</div>
     </div>
     <p class="note fragment fade-up">Without that card the bar stays at 4, the
       <b class="num">{{dice.roll[0]}}</b> misses it, and <em>the very same four dice give
@@ -391,7 +391,7 @@
         <div class="cap">The trend die needs</div>
         <div class="big" id="d-need">4+</div>
         <p class="says" id="d-odds"></p>
-        <div class="cap" style="margin-top:14px">The coin moves</div>
+        <div class="cap" style="margin-top:14px">The future moves</div>
         <div class="big" id="d-chg">{{diceNoCards.chg}}</div>
         <p class="says" id="d-says"></p>
       </div>
@@ -399,7 +399,7 @@
     <p class="note">Start at zero cards: these dice give <b class="down">{{diceNoCards.chg}}</b>.
       Now drag one ↑ card in. Nothing about the dice changed — the bar moved from 4 to 3,
       the same roll now clears it, and the round is <b class="up">+{{dice.chg}}</b> instead — <b class="num">{{diceNoCards.mark}}</b> against <b class="num">{{dice.mark}}</b>.
-      <em>A single card is worth {{dice.chg * 2}} dollars of coin here.</em></p>
+      <em>A single card is worth {{dice.chg * 2}} dollars of the future here.</em></p>
   </div>
   <aside class="notes">This is the slide to linger on. Same four dice, opposite outcome.
   It also shows why the cap exists: push to three net cards and the bar hits 1, the die
@@ -414,7 +414,7 @@
     <div class="two wide">
       <div>
         <div class="sum">
-          <div class="k">you bought</div><div class="v">{{pl.shares}} coins</div><div class="why">a market order, filled in full</div>
+          <div class="k">you bought</div><div class="v">{{pl.shares}} futures</div><div class="why">a market order, filled in full</div>
           <div class="k">you paid</div><div class="v cyan">${{round.price}}</div><div class="why">the print — beat 2</div>
           <div class="k">it closed at</div><div class="v ind">${{dice.mark}}</div><div class="why">the mark — beat 4</div>
           <div class="hr"></div>
@@ -441,7 +441,7 @@
   <p class="kicker">The optional second layer</p>
   <h1>Options</h1>
   <p class="sub">Switched on at setup. The stock-only game is exactly as it was —
-    this adds a market in <em>bets on where the coin ends up</em>, and makes you the
+    this adds a market in <em>bets on where the future ends up</em>, and makes you the
     one quoting the prices.</p>
   <aside class="notes">If the table is new, play a full game without this first. With
   options on, every round gains the auction beat — one gate per expiry — which roughly
@@ -456,19 +456,19 @@
     <div class="cards">
       <div class="card raised">
         <div class="cap"><span class="kind call">call</span></div>
-        <p class="says" style="margin-top:14px"><b>The right to buy the coin at a
-          number.</b> Buy the <b class="num">${{teach.strike}}</b> call and if the coin
+        <p class="says" style="margin-top:14px"><b>The right to buy the future at a
+          number.</b> Buy the <b class="num">${{teach.strike}}</b> call and if the future
           closes at <b class="num">${{teach.win.settled[0].price}}</b> you are handed
-          <b>{{teach.win.shares}} coin at {{teach.strike}}</b> — worth
+          <b>{{teach.win.shares}} future at {{teach.strike}}</b> — worth
           <b class="num">${{teach.win.settled[0].value}}</b> more than you pay for it.
           Close below {{teach.strike}} and it simply expires.</p>
       </div>
       <div class="card raised">
         <div class="cap"><span class="kind put">put</span></div>
-        <p class="says" style="margin-top:14px"><b>The right to sell the coin at a
+        <p class="says" style="margin-top:14px"><b>The right to sell the future at a
           number.</b> Buy the <b class="num">${{teach.strike}}</b> put and a close at
           <b class="num">${{teach.putWin.settled[0].price}}</b> lets you sell
-          <b>{{teach.putWin.shares * -1}} coin at {{teach.strike}}</b> — a short position
+          <b>{{teach.putWin.shares * -1}} future at {{teach.strike}}</b> — a short position
           <b class="num">${{teach.putWin.settled[0].value}}</b> to the good.
           Close above and it simply expires.</p>
       </div>
@@ -483,7 +483,7 @@
       </div>
     </div>
     <p class="note fragment fade-up"><b>An option that finishes in the money turns
-      into coin, not cash</b> — the position lands on your blotter at the strike and
+      into a futures position, not cash</b> — the position lands on your blotter at the strike and
       keeps moving with the market. <b>Nothing in this game ever quotes an option for
       you.</b> There is no model, no suggested value, no fair price on the screen. The
       only option price that exists is one the table agreed on — which is the entire
@@ -531,9 +531,9 @@
             and the last. An expiry marked <b>0DTE</b> is listed only in its own round:
             one auction, one dice roll, gone.</li>
           <li>The shaded middle row is <b>at the money</b>: the strike sitting exactly
-            where the coin is, <b class="num">${{grid100[4]}}</b> here. Four strikes either
+            where the future is, <b class="num">${{grid100[4]}}</b> here. Four strikes either
             side, <b>$5 apart</b>.</li>
-          <li>The board <b>re-centres every round</b>. If the coin closes at
+          <li>The board <b>re-centres every round</b>. If the future closes at
             <b class="num">{{grid112[4]}}</b>, next round's strikes run
             <b class="num">{{grid112[0]}}</b> to <b class="num">{{grid112[8]}}</b>
             and <em>the old ones are gone</em>.</li>
@@ -544,7 +544,7 @@
       </div>
     </div>
   </div>
-  <aside class="notes">The anchor is not rounded — it is wherever the coin closed, so
+  <aside class="notes">The anchor is not rounded — it is wherever the future closed, so
   the strikes are only round numbers by luck. That keeps the middle row exactly at the
   money rather than near it.</aside>
 </section>
@@ -739,7 +739,7 @@
         <svg class="plot" id="exp-plot" viewBox="0 0 640 250" role="img"
              aria-label="payoff of a bought call against the closing price"></svg>
         <div class="ctl" style="margin-top:6px;grid-template-columns:170px 1fr 92px">
-          <div class="k"><b>The coin closes at</b></div>
+          <div class="k"><b>The future closes at</b></div>
           <div><input type="range" id="e-px" min="80" max="140" step="1" value="{{teach.win.settled[0].price}}" aria-label="closing price"></div>
           <div class="v" id="e-px-v">${{teach.win.settled[0].price}}</div>
         </div>
@@ -759,7 +759,7 @@
         <div class="big" id="e-pl">+{{teach.win.pl}}</div>
         <p class="says" id="e-says"></p>
         <p class="says faint" style="margin-top:12px">Settlement is arithmetic, not
-          opinion: in the money, you take the coin at the strike and it is worth what
+          opinion: in the money, you take the future at the strike and it is worth what
           it is worth; either way the premium is spent.</p>
       </div>
     </div>
@@ -787,26 +787,28 @@
     <div class="two wide" style="align-items:start">
       <div>
         <ul class="plain">
-          <li><b>Confirm, or you are not in.</b> Typed is not traded. Every beat is a
-            gate and it can shut without you.</li>
-          <li><b>Passing is a move.</b> No order, no quote, no cards — perfectly legal,
-            and often right.</li>
+          <li><b>The cards move the future.</b> Every ↑ or ↓ you play shifts the bar the
+            trend die has to clear; × and + decide how big the move is. Three net cards
+            one way <em>buy the direction outright</em>. Play them for your position —
+            and assume everyone else is doing the same.</li>
+          <li><b>Hedge with the future.</b> Options trade first on purpose: whatever the
+            auction leaves you holding, you can trade futures against it in the same
+            round, before the dice. Short calls and the table is leaning up? Buy.</li>
+          <li><b>Read the tape and the open interest.</b> Who is long what tells you
+            which way the cards are about to push. The option book is public; use it.</li>
           <li><b>Size is cheap, being wrong is not.</b> The print barely moves on big
             orders. The mark does not care how big you are.</li>
         </ul>
       </div>
       <div>
         <ul class="plain">
-          <li><b>Options are public, the coin is not.</b> Every option fill is on the
-            tape by name, and the wall shows open interest. Nobody sees your stock
-            position — only your P/L.</li>
-          <li><b>Quote wider than feels clever.</b> You are naming a price in both
-            directions against an unknown. Once is enough to learn this.</li>
-          <li><b>Short options have no ceiling.</b> It is the one position in the game
-            that can lose more than you expected to make.</li>
-          <li><b>Use the wall.</b> The <b>Table</b> button on your seat flips to it and
-            back. And if the table is short of people, the host can seat <b>bots</b> —
-            they quote, trade and hedge on their own.</li>
+          <li><b>Options are public, the future is not.</b> Every option fill is on the
+            tape by name. Nobody sees your futures position — only your P/L.</li>
+          <li><b>Short options have no ceiling.</b> The one position in the game that
+            can lose more than you expected to make — and the one a card-pusher will
+            come for.</li>
+          <li><b>Confirm, or you are not in.</b> Typed is not traded. Every beat is a
+            gate and it can shut without you. Passing is a legal move; forgetting is not.</li>
         </ul>
       </div>
     </div>
@@ -817,5 +819,7 @@
   <aside class="notes">Default game is five rounds, ten cards each, opening at 100. All
   three are host-settable, along with whether options are on, which rounds carry an
   expiry, and which of those are 0DTE. Shorter first game: three rounds, options off.
-  With one or two humans, add a couple of bots so the auction has a market in it.</aside>
+  With one or two humans, add a couple of bots. The Table button on a seat flips to the
+  wall and back. Quote wider than feels clever the first time; once is enough to learn.</aside>
 </section>
+
