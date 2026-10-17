@@ -168,7 +168,9 @@ further level at its own limit. Whatever crossing interest is left then trades
 among the players, all of it printing at the clearing price. A contract nobody
 quoted does not trade: no fill, no print, no bot. Afterwards the contract is
 marked at its **last sale** — the final price anyone paid, whatever the clearing
-price was — until the next auction that touches it.
+price was — until the next auction that touches it, and never below what it is
+in the money by against the current mark. That floor is the one thing about an
+option's value that is arithmetic rather than opinion.
 
 Contracts settle **by delivery** against the **mark** at the end of the round
 they expire in — the dice price, not the print. A call that finishes in the money

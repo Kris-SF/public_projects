@@ -14,7 +14,7 @@ import {
   makePosition, makeMarketOrder, makeQuote, isIndicated,
   indicateOrders, revealOrders, clearContract,
   rollupPositions, grossOptionInventory, intrinsic, settleExpiring,
-  optionPL, contractKey,
+  optionPL, contractKey, markedAt,
 } from './options.js';
 import {
   createGame, addPlayer, startGame, privateState, publicState,
@@ -596,6 +596,48 @@ test('at the instant of expiry, delivery and cash settlement score the same', ()
   const short = makePosition({ playerId: 'p2', kind: 'call', strike: 100, expiry: 1, qty: -1, premium: 12, round: 1 });
   const w = settleExpiring([short], 1, 124);
   assert.equal(w.realized + (124 - 100) * w.settled[0].shares, -12);
+});
+
+test('a mark is never below intrinsic', () => {
+  const call = makePosition({ playerId: 'p1', kind: 'call', strike: 100, expiry: 5, qty: 2, premium: 10, round: 1 });
+  const marks = new Map([[contractKey(call), 3]]);
+  assert.equal(optionPL([call], marks), (3 - 10) * 2, 'with no coin price, the last sale stands');
+  assert.equal(optionPL([call], marks, 124), (24 - 10) * 2, 'with the coin at 124 the $100 call is at least 24');
+  assert.equal(optionPL([call], marks, 101), (3 - 10) * 2, 'in by 1, the sale at 3 is the mark');
+  assert.equal(optionPL([call], new Map(), 124), (24 - 10) * 2, 'an unmarked contract is floored the same way');
+  const put = makePosition({ playerId: 'p1', kind: 'put', strike: 100, expiry: 5, qty: -1, premium: 4, round: 1 });
+  assert.equal(optionPL([put], new Map([[contractKey(put), 2]]), 80), (20 - 4) * -1, 'and so is a short put');
+});
+
+test('the board shows floored marks, and a settled contract keeps its final one', () => {
+  const g = twoSeats({ fixedExpiries: [1, 5], orderCoverage: 'all' });
+  const [alice, bob] = g.players;
+  // Both tables: Alice sells Bob the 100 call cheaply, so it is marked low.
+  for (const expiry of [1, 5]) {
+    const c = { expiry, kind: 'call', strike: 100 };
+    Object.assign(g.options.orders.find((o) => o.expiry === expiry && o.kind === 'call' && o.strike === 100),
+      { side: 'BUY', qty: 1 });
+    submitQuotes(g, alice.id, [{ ...c, askPx: 2, askQty: 2 }]);
+    submitQuotes(g, bob.id, [{ ...c, bidPx: 2, bidQty: 2 }]);
+    confirmQuotes(g, alice.id);
+    confirmQuotes(g, bob.id);
+  }
+  const k1 = contractKey({ expiry: 1, kind: 'call', strike: 100 });
+  const k5 = contractKey({ expiry: 5, kind: 'call', strike: 100 });
+  assert.equal(publicState(g).optionBoard.marks[k5], 2, 'at the money: the sale is the mark');
+
+  finishRound(g, [5, 1, 6, 6]);   // coin to 112
+  const marks = publicState(g).optionBoard.marks;
+  assert.equal(marks[k5], 12, 'the R5 call last sold at 2 but is in by 12, so 12');
+  assert.equal(marks[k1], 12, 'the R1 call settled at 12');
+  // Bob's R5 call: bought at 2, carried at 12.
+  const row = publicState(g).standings.find((r) => r.name === 'BOB');
+  const held = bob.optionPositions.reduce((a, x) => a + x.qty, 0);
+  assert.equal(row.optionPl, bob.realizedOptionPl + (12 - 2) * held);
+  // And the R1 expiry's prior mark was floored at what it was in by before the dice: nothing.
+  const r1 = bob.settledOptions.find((x) => x.expiry === 1);
+  assert.equal(r1.priorMark, 2);
+  assert.equal(r1.plFromMark, (12 - 2) * r1.qty);
 });
 
 test('open P/L marks against the auction, and unmarked positions are flat', () => {
