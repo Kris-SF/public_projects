@@ -621,8 +621,6 @@ function standingsTable(st, opts = {}) {
     <tr class="${opts.meId === p.id ? 'me' : ''}">
       <td class="num dim">${i + 1}</td>
       <td class="strong">${esc(p.name)}${p.bot ? ' <span class="bot-tag">bot</span>' : ''}</td>
-      <td class="num ${cls(p.shares)}">${signed(p.shares)}</td>
-      <td class="num dim">${p.avgPrice === null ? '—' : px(p.avgPrice)}</td>
       <td class="num strong ${cls(p.pl)}">${money(p.pl)}</td>
       <td class="num dim">${p.cardsLeft}</td>
       ${opts.host ? `<td class="num"><button class="danger" data-kick="${p.id}" data-name="${esc(p.name)}">×</button></td>` : ''}
@@ -631,12 +629,13 @@ function standingsTable(st, opts = {}) {
   return `
     <div class="scroll-x">
       <table>
+        ${/* No position, no average: the scoreboard says who is winning, not
+              what anyone is holding. Your own are on your mat. */ ''}
         <thead><tr>
-          <th class="num">#</th><th>Player</th><th class="num">Pos</th>
-          <th class="num">Avg</th><th class="num">P/L</th><th class="num">Cards</th>
+          <th class="num">#</th><th>Player</th><th class="num">P/L</th><th class="num">Cards</th>
           ${opts.host ? '<th></th>' : ''}
         </tr></thead>
-        <tbody>${rows || '<tr><td colspan="7" class="dim">No players seated</td></tr>'}</tbody>
+        <tbody>${rows || '<tr><td colspan="5" class="dim">No players seated</td></tr>'}</tbody>
       </table>
     </div>`;
 }
