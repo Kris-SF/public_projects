@@ -1544,7 +1544,7 @@ function optionBlotter(me, st) {
       });
       const netTime = lines.reduce((a, l) => a + l.time, 0);
       const netPl = lines.reduce((a, l) => a + l.pl, 0);
-      return `<div class="o-detail-cap">By contract</div><div class="scroll-x"><table>
+      return `<div class="o-detail-cap">Option prints</div><div class="scroll-x"><table>
       <thead><tr><th>Contract</th><th class="num">Qty</th><th class="num">Avg</th>
         <th class="num">Mark</th><th class="num">Time</th><th class="num">P/L</th></tr></thead>
       <tbody>${lines.map(({ r, avg, mk, unmarked, time, pl }) => `<tr>
