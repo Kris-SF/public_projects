@@ -527,8 +527,9 @@
       </div>
       <div>
         <ul class="plain">
-          <li>Calls read down the left, puts down the right, <b>strikes up the middle</b> —
-            the layout a real trading screen uses.</li>
+          <li><b>Only the rounds the host picks expire</b> — two by default, the midpoint
+            and the last. An expiry marked <b>0DTE</b> is listed only in its own round:
+            one auction, one dice roll, gone.</li>
           <li>The shaded middle row is <b>at the money</b>: the strike sitting exactly
             where the coin is, <b class="num">${{grid100[4]}}</b> here. Four strikes either
             side, <b>$5 apart</b>.</li>
@@ -589,7 +590,7 @@
   <p class="eyebrow">Options · entering a quote</p>
   <h2>Four boxes, reading outward from the middle</h2>
   <div class="body">
-    <div class="two">
+    <div class="two wide" style="align-items:start">
       <div>
         <div class="ticket">
           <div class="cap">
@@ -620,6 +621,7 @@
             its own spread — exactly like the board.</li>
           <li>Leave a side blank to quote <b>one way only</b>. Leave everything blank and
             confirm to <b>pass</b>.</li>
+          <li><b>Set a default size once</b>; typing a price fills the size in beside it.</li>
         </ul>
         <p class="note">Only strikes carrying a house order are listed, because only
           those can clear. A quote anywhere else could never trade.</p>
@@ -716,9 +718,11 @@
           never charged.</p>
       </div>
     </div>
-    <p class="note fragment fade-up"><b>And if nobody quotes the side the house needs,
-      the contract simply does not trade.</b> No fill, no price, no robot stepping in to
-      make one. A strike everybody passed on stays blank all round.</p>
+    <p class="note fragment fade-up"><b>If nobody quotes the side the house needs, the
+      contract simply does not trade</b> — no fill, no price, no robot stepping in.
+      Afterwards a contract is <b>marked at its last sale</b>, and never below what it
+      is already in the money by. Your mat shows, per contract, how much of that mark
+      is <b>time premium</b> you are paying for or being paid.</p>
   </div>
   <aside class="notes">Yes, these two rules point different directions, and that is the
   real asymmetry to understand: the house pays up as it walks, players get dragged to
@@ -778,9 +782,9 @@
 <!-- 20 ─────────────────────────────────────────────────── PLAYING WELL ─── -->
 <section>
   <p class="eyebrow">Go</p>
-  <h2>Six things worth knowing on your first game</h2>
+  <h2>Seven things worth knowing on your first game</h2>
   <div class="body">
-    <div class="two wide">
+    <div class="two wide" style="align-items:start">
       <div>
         <ul class="plain">
           <li><b>Confirm, or you are not in.</b> Typed is not traded. Every beat is a
@@ -793,12 +797,16 @@
       </div>
       <div>
         <ul class="plain">
-          <li><b>Watch what the table did.</b> The order book is shown after every
-            round. Who bought, how much, at what.</li>
+          <li><b>Options are public, the coin is not.</b> Every option fill is on the
+            tape by name, and the wall shows open interest. Nobody sees your stock
+            position — only your P/L.</li>
           <li><b>Quote wider than feels clever.</b> You are naming a price in both
             directions against an unknown. Once is enough to learn this.</li>
           <li><b>Short options have no ceiling.</b> It is the one position in the game
             that can lose more than you expected to make.</li>
+          <li><b>Use the wall.</b> The <b>Table</b> button on your seat flips to it and
+            back. And if the table is short of people, the host can seat <b>bots</b> —
+            they quote, trade and hedge on their own.</li>
         </ul>
       </div>
     </div>
@@ -807,6 +815,7 @@
       about it?</em></p>
   </div>
   <aside class="notes">Default game is five rounds, ten cards each, opening at 100. All
-  three are host-settable, along with whether options are on and which rounds carry an
-  expiry. Shorter first game: three rounds, options off.</aside>
+  three are host-settable, along with whether options are on, which rounds carry an
+  expiry, and which of those are 0DTE. Shorter first game: three rounds, options off.
+  With one or two humans, add a couple of bots so the auction has a market in it.</aside>
 </section>
