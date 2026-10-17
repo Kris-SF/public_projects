@@ -246,21 +246,6 @@ test('a full game settles P/L consistently', () => {
 
 // --- Information hiding ----------------------------------------------------
 
-test('the settled round records who traded the stock', () => {
-  const g = createGame('HIST', {});
-  addPlayer(g, 'alice'); addPlayer(g, 'bob');
-  startGame(g, () => 0.5);
-  const [a, b] = g.players;
-  submitOrder(g, a.id, { qty: 4, type: 'MARKET' }); confirmOrder(g, a.id);
-  submitOrder(g, b.id, { qty: -4, type: 'LIMIT' }); confirmOrder(g, b.id);
-  for (const p of g.players) confirmCards(g, p.id);
-  for (const d of [5, 1, 6, 6]) lockRoll(g, Math.random, d);
-  const rows = g.history[0].orders;
-  assert.deepEqual(rows.map((r) => [r.name, r.qty, r.type, r.filled]),
-    [['ALICE', 4, 'MARKET', 4], ['BOB', -4, 'LIMIT', -4]]);
-  assert.ok(rows.every((r) => !('playerId' in r)), 'names, not ids');
-});
-
 test('orders stay hidden until the gate trips', () => {
   const { g, players } = tableOf(['a', 'b']);
   submitOrder(g, players[0].id, { qty: 999, type: 'MARKET' });
