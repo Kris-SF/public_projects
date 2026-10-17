@@ -1519,12 +1519,17 @@ function optionBlotter(me, st) {
       // in the money by, times the position. Long it and you are paying for
       // the time; short it and you are being paid. A contract the auction has
       // not priced is carried at its premium, like its P/L is.
+      //
+      // Never below zero. A contract marked at or under intrinsic has no time
+      // in its price — it is trading at parity or a discount to it — and
+      // letting that go negative would turn a measure of time premium into a
+      // measure of how stale the mark is.
       const lines = rows.map((r) => {
         const avg = r.cost / r.qty;
         const mk = marks[optKey(r)];
         const carried = mk === undefined ? avg : mk;
         const inThe = r.kind === 'call' ? Math.max(0, st.mark - r.strike) : Math.max(0, r.strike - st.mark);
-        const time = (carried - inThe) * r.qty;
+        const time = Math.max(0, carried - inThe) * r.qty;
         const pl = mk === undefined ? 0 : (mk - avg) * r.qty;
         return { r, avg, mk, time, pl };
       });
