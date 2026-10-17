@@ -57,7 +57,10 @@ the underlying against it in the same round. Running stock first would push ever
 hedge a round late, to after the dice had settled the thing being hedged.
 
 Quotes, orders and cards stay sealed until their gate trips. Who has confirmed is
-public; what they confirmed is not.
+public; what they confirmed is not. After the gate, the stock book is published
+in aggregate only — bids, offers, imbalance, print — and **nobody's stock
+position is ever shown to anyone else**. The scoreboard is rank, P/L and cards
+left; your own position, average price and fills are on your own mat.
 
 ## The market
 
@@ -181,9 +184,12 @@ expires. The premium is the only option P/L booked, so a player's score at the
 instant of expiry is exactly what cash settlement would have given — the
 difference is what they are holding afterwards.
 
-Every option fill is public: the tape names buyer, seller, contract, size and
-price, and the wall shows each player's net book by strike. A player can flip
-to the wall from their own seat and back.
+Options are the public side of the game: every fill is on the tape by name —
+buyer, seller, contract, size, price — and the wall shows open interest by
+strike, counted with the house as the other side. Positions are not on the
+wall; a player's own book is on their mat, as a straddle-view montage and a
+by-contract table with the time premium they are long or short of. A player
+can flip to the wall from their seat with the *Table* button and back.
 
 ## Bots
 
