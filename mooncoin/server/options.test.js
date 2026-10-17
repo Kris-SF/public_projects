@@ -631,7 +631,7 @@ test('the board shows floored marks, and a settled contract keeps its final one'
   assert.equal(marks[k5], 12, 'the R5 call last sold at 2 but is in by 12, so 12');
   assert.equal(marks[k1], 12, 'the R1 call settled at 12');
   // Bob's R5 call: bought at 2, carried at 12.
-  const row = publicState(g).standings.find((r) => r.name === 'BOB');
+  const row = privateState(g, bob.id).me;
   const held = bob.optionPositions.reduce((a, x) => a + x.qty, 0);
   assert.equal(row.optionPl, bob.realizedOptionPl + (12 - 2) * held);
   // And the R1 expiry's prior mark was floored at what it was in by before the dice: nothing.
@@ -923,6 +923,32 @@ test('every option fill is on the tape, by name, and survives the round', () => 
   assert.deepEqual(publicState(g).optionTrades, [], 'a new round, a blank tape');
 });
 
+test('the scoreboard is rank and P/L; nobody\'s stock position is on it', () => {
+  const g = twoSeats({ fixedExpiries: [1] });
+  const [alice, bob] = g.players;
+  for (const p of g.players) confirmQuotes(g, p.id);
+  submitOrder(g, alice.id, { qty: 4, type: 'MARKET' }); confirmOrder(g, alice.id);
+  submitOrder(g, bob.id, { qty: -4, type: 'LIMIT' }); confirmOrder(g, bob.id);
+
+  const pub = publicState(g);
+  for (const row of pub.standings) {
+    assert.deepEqual(Object.keys(row).sort(),
+      ['bot', 'cardsLeft', 'cardsReady', 'id', 'name', 'ordersReady', 'pl', 'seat', 'submittedCards', 'submittedOrder'].sort());
+  }
+  // The revealed book is aggregate only: no names, no sizes.
+  assert.equal(pub.reveal.absorbed, 4);
+  assert.equal('orders' in pub.reveal, false);
+  assert.equal('fills' in pub.reveal, false);
+  // Nothing in the shared payload pairs a player with a size (the house's
+  // own orders carry sizes, which is fine — those are the house's).
+  assert.equal(JSON.stringify(pub).includes('ALICE'), true);
+  assert.equal(/"name":"(ALICE|BOB)"[^}]*"(qty|shares|filled)"/.test(JSON.stringify(pub)), false,
+    'no player row carries a quantity');
+  // Your own is still yours.
+  assert.equal(privateState(g, alice.id).me.shares, 4);
+  assert.equal(privateState(g, bob.id).me.shares, -4);
+});
+
 test('the wall shows open interest, not anyone\'s book', () => {
   const g = twoSeats({ fixedExpiries: [1], orderCoverage: 'all' });
   const [alice, bob] = g.players;
@@ -989,7 +1015,7 @@ test('option P/L joins stock P/L in the score', () => {
   confirmQuotes(g, alice.id);
   confirmQuotes(g, bob.id);
 
-  const row = publicState(g).standings.find((s) => s.id === bob.id);
+  const row = privateState(g, bob.id).me;
   assert.equal('optionPl' in row, true);
   assert.equal(row.pl, row.stockPl + row.optionPl);
 });
@@ -1085,8 +1111,8 @@ test('exercise writes a stock fill at the strike onto the blotter', () => {
     assert.equal(delivered[0].price, 100, 'at the strike, never at the mark');
     assert.equal(delivered[0].round, 1);
     assert.deepEqual(delivered[0].exercise, { kind: 'call', strike: 100, expiry: 1, contracts: calls });
-    // And it is a real position now: the standings carry it as shares.
-    const row = publicState(g).standings.find((s) => s.id === p.id);
+    // And it is a real position now: the player's own mat carries it as shares.
+    const row = privateState(g, p.id).me;
     assert.equal(row.shares, calls);
   }
 });
@@ -1104,7 +1130,7 @@ test('delivery scores exactly what cash settlement would have, then keeps moving
   finishRound(g, [5, 1, 6, 6]);
 
   for (const { id, pl } of expected) {
-    const row = publicState(g).standings.find((s) => s.id === id);
+    const row = privateState(g, id).me;
     assert.equal(row.pl, pl, `${row.name}: same score at the instant of expiry`);
     assert.equal(row.optionPl + row.stockPl, row.pl);
     // Premium is the only option P/L; the intrinsic lives on the stock side.
@@ -1136,7 +1162,7 @@ test('realised premium outlives the position that produced it', () => {
   assert.deepEqual(seller.optionPositions, [], 'nothing open');
   assert.ok(seller.realizedOptionPl > 0, 'the writer kept the premium');
 
-  const row = publicState(g).standings.find((s) => s.id === seller.id);
+  const row = privateState(g, seller.id).me;
   assert.equal(row.optionPl, seller.realizedOptionPl,
     'the score keeps it after the row is gone');
   assert.equal(row.pl, row.stockPl + row.optionPl);

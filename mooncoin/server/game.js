@@ -827,6 +827,11 @@ function openInterest(game) {
     .sort((a, b) => a.expiry - b.expiry || a.strike - b.strike || a.kind.localeCompare(b.kind));
 }
 
+/**
+ * The scoreboard. Rank and P/L are public; what anyone is holding in the
+ * stock is not — position, average price, and the stock/option split that
+ * would let a position be backed out of it all stay on the player's own mat.
+ */
 export function standings(game) {
   return game.players
     .map((p) => ({
@@ -834,7 +839,7 @@ export function standings(game) {
       seat: p.seat,
       name: p.name,
       bot: !!p.bot,
-      ...withOptions(game, p),
+      pl: withOptions(game, p).pl,
       cardsLeft: p.hand.up + p.hand.down + p.hand.multiply + p.hand.add,
       ordersReady: !!game.ready.orders[p.id],
       cardsReady: !!game.ready.cards[p.id],
@@ -884,7 +889,10 @@ export function publicState(game) {
     optionTrades: game.options?.tape ?? [],
     openInterest: game.options ? openInterest(game) : [],
     history: game.history,
-    reveal: game.phase === 'orders' ? null : game.reveal,
+    // The book in aggregate only. The per-player orders and fills behind it
+    // stay out of the shared payload: a player's own are on their mat, and
+    // everyone else's are nobody's business.
+    reveal: game.phase === 'orders' || !game.reveal ? null : (({ orders, fills, ...book }) => book)(game.reveal),
     net: game.phase === 'orders' || game.phase === 'cards' ? null : game.net,
     dice: game.dice,
     rollStep: rollStep(game),

@@ -221,9 +221,10 @@ test('a full game settles P/L consistently', () => {
   roll(g, [4, 5, 5, 3]);                 // +15 -> mark 115
 
   assert.equal(g.mark, 115);
-  const s = standings(g);
-  const b = s.find((x) => x.name === 'BUYER');
-  const l = s.find((x) => x.name === 'SELLER');
+  // Positions are each player's own; the public scoreboard carries P/L only.
+  const b = privateState(g, players[0].id).me;
+  const l = privateState(g, players[1].id).me;
+  assert.equal(standings(g).find((x) => x.name === 'BUYER').pl, b.pl);
   assert.equal(b.shares, 5);
   assert.equal(b.pl, (115 - 102) * 5);   // 65
   assert.equal(l.shares, -3);
