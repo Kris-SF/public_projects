@@ -1501,6 +1501,43 @@ function optionTape(st, meName = null) {
     </div>`).join('');
 }
 
+/**
+ * Every stock fill, round by round, newest first: who bought, who sold, at
+ * what, and whether a resting order got done. This round's from the book
+ * once its gate has tripped, earlier rounds' from history.
+ */
+function futuresTape(st, meName = null) {
+  const rounds = [];
+  if (st.reveal?.orders?.length) rounds.push({ round: st.round, orders: st.reveal.orders, price: st.reveal.price, live: true });
+  for (const h of st.history.slice().reverse()) {
+    if (h.orders?.length) rounds.push({ round: h.round, orders: h.orders, price: h.print, live: false });
+  }
+  if (!rounds.length) return '<div class="n-waiting">No stock trades yet.</div>';
+
+  const who = (n) => `<span class="${n === meName ? 'o-me' : ''}">${esc(n)}</span>`;
+  const row = (o, price) => {
+    const side = o.qty > 0 ? 'bought' : o.qty < 0 ? 'sold' : 'passed';
+    const done = o.filled !== 0;
+    return `<tr class="${done ? '' : 'dim'}">
+      <td>${who(o.name)}</td>
+      <td class="${o.qty > 0 ? 'up' : o.qty < 0 ? 'down' : 'dim'}">${side}</td>
+      <td class="num ${cls(o.qty)}">${o.qty === 0 ? '—' : Math.abs(o.qty)}</td>
+      <td class="dim">${o.qty === 0 ? '' : o.type === 'MARKET' ? 'market' : 'limit'}</td>
+      <td class="num ${cls(o.filled)}">${o.qty === 0 ? '—' : done ? signed(o.filled) : '<span class="o-none">unfilled</span>'}</td>
+      <td class="num">${done ? price : '<span class="o-none">—</span>'}</td>
+    </tr>`;
+  };
+
+  return rounds.map((r) => `
+    <div class="o-tape ${r.live ? 'live' : ''}">
+      <div class="o-cap">Round ${r.round} <span class="dim">printed ${r.price}</span></div>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Player</th><th>Side</th><th class="num">Qty</th><th>Type</th><th class="num">Filled</th><th class="num">Price</th></tr></thead>
+        <tbody>${r.orders.map((o) => row(o, r.price)).join('')}</tbody>
+      </table></div>
+    </div>`).join('');
+}
+
 /** The player's own option book: the montage, the detail, then what has expired. */
 function optionBlotter(me, st) {
   const open = me.optionPositions ?? [];
@@ -1671,6 +1708,7 @@ function renderPlayer() {
           <i>paid by takers, collected by resters</i>
         </div>`) : '',
     st.options ? sec(optionBlotter(me, st), true) : '',   // the by-contract table needs the width
+    sec(`${rule('Futures prints', 'who bought, who sold')}${futuresTape(st, me.name)}`, true),
     st.options ? sec(`${rule('Option trades', 'who traded what')}${optionTape(st, me.name)}`, true) : '',
     sec(`
       ${rule('Your hand', `${me.hand.up + me.hand.down + me.hand.multiply + me.hand.add} left`)}
@@ -1790,6 +1828,9 @@ function renderDashboard(hostMode = false, fromSeat = false) {
 
       <div class="n-cols">
         <div>
+          ${rule('Futures prints', 'who bought, who sold')}
+          ${futuresTape(st, S.me?.name ?? null)}
+
           ${diceRound ? `
             ${rule(
               diceRound.live ? `Round ${diceRound.round} dice` : `Round ${diceRound.round} settled`,
