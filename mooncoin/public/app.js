@@ -28,6 +28,7 @@ const ui = {
   // it lives in localStorage rather than in the game.
   defaultSize: (() => { try { return localStorage.getItem('mooncoin:qsize') ?? '1'; } catch { return '1'; } })(),
   view: 'seat',        // a player's screen: their own seat, or the table's wall
+  expiredRound: null,  // which round's expiries the mat shows: null = the latest, 'all', or a round
   rolling: false,
   name: '',
   joinCode: '',
@@ -267,6 +268,7 @@ function apply(body) {
     ui.qty = '';
     ui.cards = { up: 0, down: 0, multiply: 0, add: 0 };
     ui.quotes = {};
+    ui.expiredRound = null;   // a new round's expiries are the ones to look at
   }
   ui.lastRound = body.state.round;
 
@@ -333,6 +335,7 @@ const act = {
   },
 
   setView(view) { ui.view = view; render(); },
+  setExpiredRound(v) { ui.expiredRound = v === 'all' ? 'all' : Number(v); render(); },
 
   /** Only send contracts with something on them; blank rows are not orders. */
   async submitQuotes() {
@@ -901,6 +904,9 @@ function wirePlayer() {
   if (qsize) qsize.oninput = (e) => act.setDefaultSize(e.target.value);
   const toTable = document.getElementById('toTable');
   if (toTable) toTable.onclick = () => act.setView('table');
+  document.querySelectorAll('[data-expired]').forEach((b) => {
+    b.onclick = () => act.setExpiredRound(b.dataset.expired);
+  });
 
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
   on('submitQuotes', act.submitQuotes);
@@ -1557,10 +1563,23 @@ function optionBlotter(me, st) {
         by: <span class="up">positive</span> you own it and the clock is against you,
         <span class="down">negative</span> you sold it and the clock is with you.</div>`;
     })() : ''}
-    ${settled.length ? `<div class="o-detail-cap">Expired</div><div class="scroll-x"><table>
+    ${settled.length ? (() => {
+      // Default to the round that just expired — that is the one the table is
+      // talking about — with the earlier rounds a tap away rather than stacked
+      // underneath it.
+      const rounds = [...new Set(settled.map((x) => x.round))].sort((a, b) => b - a);
+      const pick = ui.expiredRound ?? rounds[0];
+      const shown = pick === 'all' ? settled : settled.filter((x) => x.round === pick);
+      const filter = rounds.length > 1 ? `
+        <div class="o-chips sm">
+          ${rounds.map((r) => `<button class="o-chip ${pick === r ? 'on' : ''}" data-expired="${r}">R${r}</button>`).join('')}
+          <button class="o-chip ${pick === 'all' ? 'on' : ''}" data-expired="all">all</button>
+        </div>` : '';
+      return `<div class="o-detail-cap o-detail-row"><span>Expired${pick === 'all' ? '' : ` · round ${pick}`}</span>${filter}</div>
+      <div class="scroll-x"><table>
       <thead><tr><th>Contract</th><th class="num">Qty</th><th class="num">Mark → in by</th>
         <th class="num">vs mark</th><th class="num">All-in</th><th class="num">Delivered</th></tr></thead>
-      <tbody>${settled.slice().reverse().map((s) => `<tr>
+      <tbody>${shown.slice().reverse().map((s) => `<tr>
         <td class="o-contract spent">${contractTag(s)}</td>
         <td class="num ${cls(s.qty)}">${signed(s.qty)}</td>
         <td class="num"><span class="dim">${s.priorMark === undefined ? '—' : px(s.priorMark, s.priorMark % 1 ? 2 : 0)} →</span>
@@ -1571,7 +1590,8 @@ function optionBlotter(me, st) {
           ? `${signed(s.shares)} <span class="dim">@ ${s.strike}</span>` : '<span class="o-none">—</span>'}</td>
       </tr>`).join('')}</tbody></table></div>
       <div class="n-legend"><b>vs mark</b> is what the expiry did against the price you were
-        carrying the contract at; <b>all-in</b> is against what you paid or received.</div>` : ''}`;
+        carrying the contract at; <b>all-in</b> is against what you paid or received.</div>`;
+    })() : ''}`;
 }
 
 function renderPlayer() {

@@ -1168,3 +1168,9 @@ tbody tr.exercised td:first-child { box-shadow: inset 2px 0 0 var(--cyan); }
 /* The 0DTE row of the picker: the same chips, one step quieter. */
 .o-zero { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); }
 .o-zero .o-chip.on, .o-zero .o-chip.on:hover:not(:disabled) { background: var(--cyan); border-color: var(--cyan); color: #04202c; }
+
+/* The expired table's round filter: the picker's chips, a size down, on the
+   caption line. */
+.o-detail-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.o-chips.sm { margin: 0; gap: 4px; }
+.o-chips.sm .o-chip { font-size: 11px; padding: 3px 9px; }
