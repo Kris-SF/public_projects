@@ -135,7 +135,7 @@ test('a 0DTE expiry is listed only in the round it expires', () => {
 
 test('a 0DTE round runs its auction when it opens, and not before', () => {
   const g = twoSeats({ fixedExpiries: [2], zeroDay: [2] });
-  assert.equal(g.phase, 'orders', 'R1: nothing listed, straight to the stock');
+  assert.equal(g.phase, 'orders', 'R1: nothing listed, straight to the future');
   assert.deepEqual(publicState(g).optionBoard.tables, []);
   assert.deepEqual(publicState(g).zeroDay, [2]);
   clearStock(g);
@@ -760,7 +760,7 @@ test('a round with no expiry ahead runs no auction', () => {
   for (const p of g.players) confirmCards(g, p.id);
   for (const d of [5, 1, 6, 6]) lockRoll(g, Math.random, d);
   assert.equal(g.round, 2);
-  assert.equal(g.phase, 'orders', 'nothing left to expire — straight to the stock');
+  assert.equal(g.phase, 'orders', 'nothing left to expire — straight to the future');
   assert.equal(publicState(g).auction, null);
   assert.deepEqual(publicState(g).optionBoard.tables, [], 'and no board to show');
 });
@@ -912,7 +912,7 @@ test('every option fill is on the tape, by name, and survives the round', () => 
   // Public, with no player ids in it to leak.
   assert.equal(JSON.stringify(tape).includes(alice.id), false);
 
-  // Still readable after the auction has closed and the stock is open...
+  // Still readable after the auction has closed and the future is open...
   assert.equal(g.phase, 'orders');
   assert.deepEqual(publicState(g).optionTrades, tape);
   // ...and filed with the round once it settles, cleared for the next.
