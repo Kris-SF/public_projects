@@ -1,0 +1,512 @@
+{
+ "opening": 100,
+ "round": {
+  "limitBid": 0,
+  "limitOffer": 2,
+  "marketBid": 10,
+  "marketOffer": 3,
+  "pressure": 7,
+  "absorbed": 2,
+  "imbalance": 5,
+  "price": 103,
+  "fills": [
+   {
+    "playerId": "you",
+    "qty": 6,
+    "price": 103
+   },
+   {
+    "playerId": "ana",
+    "qty": 4,
+    "price": 103
+   },
+   {
+    "playerId": "ben",
+    "qty": -3,
+    "price": 103
+   },
+   {
+    "playerId": "cara",
+    "qty": -2,
+    "price": 103
+   }
+  ],
+  "houseResidual": 5,
+  "lastMark": 100
+ },
+ "impact": [
+  {
+   "imb": 1,
+   "slip": 1
+  },
+  {
+   "imb": 2,
+   "slip": 2
+  },
+  {
+   "imb": 3,
+   "slip": 2
+  },
+  {
+   "imb": 4,
+   "slip": 2
+  },
+  {
+   "imb": 5,
+   "slip": 3
+  },
+  {
+   "imb": 6,
+   "slip": 3
+  },
+  {
+   "imb": 8,
+   "slip": 3
+  },
+  {
+   "imb": 9,
+   "slip": 3
+  },
+  {
+   "imb": 10,
+   "slip": 4
+  },
+  {
+   "imb": 12,
+   "slip": 4
+  },
+  {
+   "imb": 16,
+   "slip": 4
+  },
+  {
+   "imb": 20,
+   "slip": 5
+  },
+  {
+   "imb": 25,
+   "slip": 5
+  },
+  {
+   "imb": 30,
+   "slip": 6
+  },
+  {
+   "imb": 40,
+   "slip": 7
+  },
+  {
+   "imb": 50,
+   "slip": 8
+  }
+ ],
+ "dice": {
+  "cards": {
+   "trend": 1,
+   "mag": 0
+  },
+  "regime": {
+   "trend": 0,
+   "mag": 0
+  },
+  "net": {
+   "trend": 1,
+   "mag": 0
+  },
+  "roll": [
+   3,
+   5,
+   4,
+   6
+  ],
+  "trend": 1,
+  "type": "MULTIPLY",
+  "chg": 24,
+  "mark": 124,
+  "bar": 3
+ },
+ "diceNoCards": {
+  "net": {
+   "trend": 0,
+   "mag": 0
+  },
+  "roll": [
+   3,
+   5,
+   4,
+   6
+  ],
+  "trend": -1,
+  "type": "MULTIPLY",
+  "chg": -24,
+  "mark": 76
+ },
+ "pl": {
+  "shares": 6,
+  "pl": 126,
+  "avgPrice": 103,
+  "mark": 124
+ },
+ "auctionIn": {
+  "ana": {
+   "ask": 12,
+   "sz": 1
+  },
+  "ben": {
+   "ask": 18,
+   "sz": 1
+  },
+  "you": {
+   "bid": 20,
+   "sz": 1
+  },
+  "want": 1
+ },
+ "auction": {
+  "expiry": 3,
+  "kind": "call",
+  "strike": 100,
+  "side": "BUY",
+  "qty": 1,
+  "price": 12,
+  "last": 12,
+  "filled": 1,
+  "trades": [
+   {
+    "buyer": null,
+    "seller": "ana",
+    "qty": 1,
+    "price": 12,
+    "house": true
+   },
+   {
+    "buyer": "you",
+    "seller": "ben",
+    "qty": 1,
+    "price": 12,
+    "house": false
+   }
+  ]
+ },
+ "walkIn": {
+  "ana": {
+   "ask": 10,
+   "sz": 2
+  },
+  "ben": {
+   "ask": 14,
+   "sz": 4
+  },
+  "want": 5
+ },
+ "walk": {
+  "expiry": 3,
+  "kind": "call",
+  "strike": 100,
+  "side": "BUY",
+  "qty": 5,
+  "price": 10,
+  "last": 14,
+  "filled": 5,
+  "trades": [
+   {
+    "buyer": null,
+    "seller": "ana",
+    "qty": 2,
+    "price": 10,
+    "house": true
+   },
+   {
+    "buyer": null,
+    "seller": "ben",
+    "qty": 3,
+    "price": 14,
+    "house": true
+   }
+  ]
+ },
+ "dry": {
+  "expiry": 3,
+  "kind": "call",
+  "strike": 100,
+  "side": "BUY",
+  "qty": 1,
+  "price": null,
+  "last": null,
+  "filled": 0,
+  "trades": []
+ },
+ "grid100": [
+  80,
+  85,
+  90,
+  95,
+  100,
+  105,
+  110,
+  115,
+  120
+ ],
+ "grid112": [
+  92,
+  97,
+  102,
+  107,
+  112,
+  117,
+  122,
+  127,
+  132
+ ],
+ "settleWin": {
+  "realized": -12,
+  "settled": [
+   {
+    "expiry": 1,
+    "kind": "call",
+    "strike": 100,
+    "qty": 1,
+    "cost": 12,
+    "price": 112,
+    "intrinsic": 12,
+    "value": 12,
+    "shares": 1
+   }
+  ],
+  "remaining": []
+ },
+ "settleZero": {
+  "realized": -12,
+  "settled": [
+   {
+    "expiry": 1,
+    "kind": "call",
+    "strike": 100,
+    "qty": 1,
+    "cost": 12,
+    "price": 94,
+    "intrinsic": 0,
+    "value": 0,
+    "shares": 0
+   }
+  ],
+  "remaining": []
+ },
+ "settleShort": {
+  "realized": 12,
+  "settled": [
+   {
+    "expiry": 1,
+    "kind": "call",
+    "strike": 100,
+    "qty": -1,
+    "cost": -12,
+    "price": 112,
+    "intrinsic": 12,
+    "value": -12,
+    "shares": -1
+   }
+  ],
+  "remaining": []
+ },
+ "intrinsics": {
+  "c100at112": 12,
+  "c100at94": 0,
+  "p100at94": 6
+ },
+ "teach": {
+  "premium": 12,
+  "strike": 100,
+  "win": {
+   "realized": -12,
+   "settled": [
+    {
+     "expiry": 1,
+     "kind": "call",
+     "strike": 100,
+     "qty": 1,
+     "cost": 12,
+     "price": 124,
+     "intrinsic": 24,
+     "value": 24,
+     "shares": 1
+    }
+   ],
+   "remaining": [],
+   "shares": 1,
+   "pl": 12
+  },
+  "even": {
+   "realized": -12,
+   "settled": [
+    {
+     "expiry": 1,
+     "kind": "call",
+     "strike": 100,
+     "qty": 1,
+     "cost": 12,
+     "price": 112,
+     "intrinsic": 12,
+     "value": 12,
+     "shares": 1
+    }
+   ],
+   "remaining": [],
+   "shares": 1,
+   "pl": 0
+  },
+  "dust": {
+   "realized": -12,
+   "settled": [
+    {
+     "expiry": 1,
+     "kind": "call",
+     "strike": 100,
+     "qty": 1,
+     "cost": 12,
+     "price": 94,
+     "intrinsic": 0,
+     "value": 0,
+     "shares": 0
+    }
+   ],
+   "remaining": [],
+   "shares": 0,
+   "pl": -12
+  },
+  "short": {
+   "realized": 12,
+   "settled": [
+    {
+     "expiry": 1,
+     "kind": "call",
+     "strike": 100,
+     "qty": -1,
+     "cost": -12,
+     "price": 124,
+     "intrinsic": 24,
+     "value": -24,
+     "shares": -1
+    }
+   ],
+   "remaining": [],
+   "shares": -1,
+   "pl": -12
+  },
+  "putWin": {
+   "realized": -6,
+   "settled": [
+    {
+     "expiry": 1,
+     "kind": "put",
+     "strike": 100,
+     "qty": 1,
+     "cost": 6,
+     "price": 94,
+     "intrinsic": 6,
+     "value": 6,
+     "shares": -1
+    }
+   ],
+   "remaining": [],
+   "shares": -1,
+   "pl": 0
+  }
+ },
+ "crowdIn": {
+  "ana": {
+   "ask": 9,
+   "sz": 2
+  },
+  "ben": {
+   "ask": 11,
+   "sz": 3
+  },
+  "you": {
+   "bid": 14,
+   "sz": 2
+  },
+  "cara": {
+   "bid": 10,
+   "bsz": 1,
+   "ask": 12,
+   "asz": 1
+  },
+  "want": 2
+ },
+ "crowd": {
+  "expiry": 5,
+  "kind": "call",
+  "strike": 105,
+  "side": "BUY",
+  "qty": 2,
+  "price": 9,
+  "last": 9,
+  "filled": 2,
+  "trades": [
+   {
+    "buyer": null,
+    "seller": "ana",
+    "qty": 2,
+    "price": 9,
+    "house": true
+   },
+   {
+    "buyer": "you",
+    "seller": "ben",
+    "qty": 2,
+    "price": 9,
+    "house": false
+   }
+  ]
+ },
+ "marking": {
+  "flat": 0,
+  "up": 5,
+  "down": -3
+ },
+ "thresholds": [
+  {
+   "net": -3,
+   "need": 7,
+   "certain": "down",
+   "chance": 0
+  },
+  {
+   "net": -2,
+   "need": 6,
+   "certain": null,
+   "chance": 17
+  },
+  {
+   "net": -1,
+   "need": 5,
+   "certain": null,
+   "chance": 33
+  },
+  {
+   "net": 0,
+   "need": 4,
+   "certain": null,
+   "chance": 50
+  },
+  {
+   "net": 1,
+   "need": 3,
+   "certain": null,
+   "chance": 67
+  },
+  {
+   "net": 2,
+   "need": 2,
+   "certain": null,
+   "chance": 83
+  },
+  {
+   "net": 3,
+   "need": 1,
+   "certain": "up",
+   "chance": 100
+  }
+ ]
+}
